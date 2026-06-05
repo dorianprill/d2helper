@@ -42,6 +42,8 @@ Follow-up UI refinements:
   worker waiting/failure status in the toolbar.
 - Added Linux process capability logging and packet-capture interface indices to
   diagnose raw-channel permission and interface-binding failures.
+- Updated the locked `libd2r` Git dependency to the capture fix that disables
+  unnecessary pnet promiscuous mode for local LoD traffic.
 
 Challenges and decisions:
 
