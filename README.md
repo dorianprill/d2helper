@@ -19,10 +19,11 @@ renders a compact automap-style view. It does not read or modify game memory.
       packet id, and entity counts
 - [x] Character list populated from decoded player packets
 - [x] Placeholder health and mana bars
-- [x] Isometric automap debug renderer for revealed map cells
+- [x] Player-centered isometric automap debug renderer for revealed map cells
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
 - [x] Basic item marker colors for runes, uniques, sets, and other ground items
 - [ ] Generated static map background from seed/difficulty/act/area
+- [ ] Generated map borders, exits, and special rooms
 - [ ] Collision and pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
 - [ ] Exact Diablo II window tracking/anchoring

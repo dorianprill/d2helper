@@ -44,6 +44,12 @@ Follow-up UI refinements:
   diagnose raw-channel permission and interface-binding failures.
 - Updated the locked `libd2r` Git dependency to the capture fix that disables
   unnecessary pnet promiscuous mode for local LoD traffic.
+- Changed the automap renderer from whole-known-map bounds fitting to a
+  fixed-scale camera centered on the local player.
+- Removed noisy debug labels from NPC/object markers and added per-packet
+  parse-error logging with packet id, expected/actual length, and packet bytes.
+- Updated the locked `libd2r` Git dependency to include live-capture direction
+  filtering and packet-observed level-warp tracking.
 
 Challenges and decisions:
 

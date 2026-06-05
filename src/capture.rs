@@ -6,7 +6,7 @@
 
 use std::{any::Any, thread};
 
-use libd2r::Client;
+use libd2r::{Client, ConnectionEvent, ServerMessageParseError};
 use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
@@ -72,6 +72,7 @@ fn run_capture(shared: SharedOverlayState) {
         let mut counters = CaptureCounters::default();
 
         client.start_with_events(|event, game_state| {
+            log_connection_event(&event);
             counters.record(&event);
             let snapshot = OverlaySnapshot::from_game_state(game_state, counters.snapshot(true));
             replace_snapshot(&worker_shared, snapshot);
@@ -83,6 +84,59 @@ fn run_capture(shared: SharedOverlayState) {
         error!(%error, "capture worker panicked");
         replace_capture(&shared, CaptureSnapshot::failed(error));
     }
+}
+
+fn log_connection_event(event: &ConnectionEvent) {
+    match event {
+        ConnectionEvent::ServerMessage {
+            packet, applied, ..
+        } => {
+            info!(
+                packet_id = %format_args!("0x{:02X}", packet.packet_id()),
+                len = packet.data.len(),
+                applied,
+                "parsed D2GS server packet"
+            );
+        }
+        ConnectionEvent::ParseError { packet, error } => match error {
+            ServerMessageParseError::UnexpectedLength {
+                expected, actual, ..
+            } => {
+                warn!(
+                    packet_id = %format_args!("0x{:02X}", packet.packet_id()),
+                    expected,
+                    actual,
+                    len = packet.data.len(),
+                    bytes = %hex_prefix(&packet.data, 96),
+                    "D2GS server packet length mismatch"
+                );
+            }
+            ServerMessageParseError::UnsupportedPacketId(packet_id) => {
+                warn!(
+                    packet_id = %format_args!("0x{packet_id:02X}"),
+                    len = packet.data.len(),
+                    bytes = %hex_prefix(&packet.data, 96),
+                    "unsupported D2GS server packet"
+                );
+            }
+            ServerMessageParseError::EmptyPacket => {
+                warn!("empty D2GS server packet");
+            }
+        },
+    }
+}
+
+fn hex_prefix(bytes: &[u8], limit: usize) -> String {
+    let mut rendered = bytes
+        .iter()
+        .take(limit)
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if bytes.len() > limit {
+        rendered.push_str(" ...");
+    }
+    rendered
 }
 
 fn panic_payload_label(payload: &(dyn Any + Send)) -> String {

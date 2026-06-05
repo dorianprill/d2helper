@@ -88,13 +88,16 @@ screen_x = (world_x - world_y) * tile_width / 2
 screen_y = (world_x + world_y) * tile_height / 2
 ```
 
-The first renderer uses diamond cells and simple markers instead of MPQ/DT1
-tile art. This makes it useful immediately for parser validation and gives the
-future generated-map renderer a stable projection target.
+The first renderer uses a fixed-scale, player-centered automap camera with
+diamond cells and simple markers instead of MPQ/DT1 tile art. This makes it
+useful immediately for parser validation and gives the future generated-map
+renderer a stable projection target.
 
 ## Current Limitations
 
 - No generated-map background from seed yet.
+- No generated-map borders, exits, or special-room outlines yet; only live
+  packet-observed revealed tiles and world objects are rendered.
 - No collision or pathfinding visualization yet.
 - No MPQ/DS1/DT1 art ingestion yet.
 - Health and mana bars are placeholders until the relevant packet fields are

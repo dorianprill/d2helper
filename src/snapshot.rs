@@ -158,6 +158,38 @@ impl OverlaySnapshot {
 
         bounds.into_option()
     }
+
+    /// Returns the preferred automap focus point.
+    ///
+    /// Diablo II's automap is player-centered. Prefer the local player when the
+    /// server has identified it; fall back to any known player and finally to
+    /// the center of known map/entity bounds during early loading.
+    pub fn map_focus(&self) -> Option<MapFocus> {
+        if let Some(player) = self.players.iter().find(|player| player.is_local) {
+            return Some(MapFocus {
+                x: player.x,
+                y: player.y,
+                source: MapFocusSource::LocalPlayer,
+            });
+        }
+
+        if let Some(player) = self.players.first() {
+            return Some(MapFocus {
+                x: player.x,
+                y: player.y,
+                source: MapFocusSource::AnyPlayer,
+            });
+        }
+
+        self.marker_bounds().map(|bounds| {
+            let (x, y) = bounds.center();
+            MapFocus {
+                x: x.round() as u16,
+                y: y.round() as u16,
+                source: MapFocusSource::KnownBounds,
+            }
+        })
+    }
 }
 
 /// Capture-worker status and counters shown in the top toolbar.
@@ -377,6 +409,20 @@ pub struct MapBounds {
     has_value: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapFocus {
+    pub x: u16,
+    pub y: u16,
+    pub source: MapFocusSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapFocusSource {
+    LocalPlayer,
+    AnyPlayer,
+    KnownBounds,
+}
+
 impl MapBounds {
     fn add(&mut self, x: u16, y: u16) {
         if self.has_value {
@@ -522,5 +568,34 @@ mod tests {
         assert_eq!((bounds.min_x, bounds.min_y), (10, 30));
         assert_eq!((bounds.max_x, bounds.max_y), (20, 40));
         assert_eq!(bounds.center(), (15.0, 35.0));
+    }
+
+    #[test]
+    fn map_focus_prefers_local_player() {
+        let mut snapshot = OverlaySnapshot::default();
+        snapshot.players.push(PlayerSnapshot {
+            id: 1,
+            name: "Other".to_owned(),
+            class_name: "Sorceress".to_owned(),
+            level: 1,
+            x: 10,
+            y: 20,
+            is_local: false,
+        });
+        snapshot.players.push(PlayerSnapshot {
+            id: 2,
+            name: "Local".to_owned(),
+            class_name: "Paladin".to_owned(),
+            level: 1,
+            x: 30,
+            y: 40,
+            is_local: true,
+        });
+
+        let focus = snapshot.map_focus().expect("focus");
+        assert_eq!(
+            (focus.x, focus.y, focus.source),
+            (30, 40, MapFocusSource::LocalPlayer)
+        );
     }
 }

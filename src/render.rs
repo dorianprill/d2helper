@@ -7,7 +7,7 @@
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 
-use crate::snapshot::{MapBounds, OverlaySnapshot};
+use crate::snapshot::{MapFocus, OverlaySnapshot};
 
 const TILE_WIDTH: f32 = 22.0;
 const TILE_HEIGHT: f32 = 11.0;
@@ -26,7 +26,7 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
         egui::StrokeKind::Inside,
     );
 
-    let Some(bounds) = snapshot.marker_bounds() else {
+    let Some(focus) = snapshot.map_focus() else {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -37,13 +37,13 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
         return;
     };
 
-    let projector = IsoProjector::new(rect, bounds);
+    let projector = IsoProjector::new(rect, focus);
     draw_revealed_tiles(&painter, &projector, snapshot);
     draw_objects(&painter, &projector, snapshot);
     draw_items(&painter, &projector, snapshot);
     draw_npcs(&painter, &projector, snapshot);
     draw_players(&painter, &projector, snapshot);
-    draw_bounds_label(&painter, rect, bounds);
+    draw_focus_label(&painter, rect, focus);
 }
 
 #[cfg(test)]
@@ -65,8 +65,8 @@ mod tests {
             y: 40,
             area_id: 1,
         });
-        let bounds = snapshot.marker_bounds().expect("bounds");
-        let projector = IsoProjector::new(rect, bounds);
+        let focus = snapshot.map_focus().expect("focus");
+        let projector = IsoProjector::new(rect, focus);
 
         assert_eq!(projector.project(20, 30), rect.center());
     }
@@ -80,8 +80,8 @@ mod tests {
             y: 10,
             area_id: 1,
         });
-        let bounds = snapshot.marker_bounds().expect("bounds");
-        let projector = IsoProjector::new(rect, bounds);
+        let focus = snapshot.map_focus().expect("focus");
+        let projector = IsoProjector::new(rect, focus);
 
         assert_eq!(
             projector.project(11, 10),
@@ -139,20 +139,13 @@ fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnap
         let radius = if npc.state.is_some() { 3.5 } else { 3.0 };
         painter.circle_filled(position, radius, color);
 
-        if snapshot.npcs.len() <= 12 {
-            painter.text(
-                position + Vec2::new(5.0, -8.0),
-                egui::Align2::LEFT_CENTER,
-                format!("#{} {:?}", npc.id, npc.class_id),
-                egui::FontId::monospace(9.0),
-                Color32::from_gray(190),
-            );
-        }
+        let _ = (npc.id, npc.class_id);
     }
 }
 
 fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for item in &snapshot.items {
+        let _ = (item.id, item.action.as_str(), item.category.as_str());
         let (Some(x), Some(y)) = (item.x, item.y) else {
             continue;
         };
@@ -175,12 +168,11 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
             color,
         );
 
-        if snapshot.items.len() <= 12 {
-            let code = item.code.as_deref().unwrap_or("?");
+        if let Some(code) = item.code.as_deref() {
             painter.text(
                 position + Vec2::new(6.0, 8.0),
                 egui::Align2::LEFT_CENTER,
-                format!("#{} {code} {} {}", item.id, item.category, item.action),
+                code,
                 egui::FontId::monospace(9.0),
                 Color32::from_gray(210),
             );
@@ -197,26 +189,15 @@ fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
             Stroke::NONE,
         ));
 
-        if snapshot.objects.len() <= 12 {
-            painter.text(
-                position + Vec2::new(6.0, 0.0),
-                egui::Align2::LEFT_CENTER,
-                format!("#{} {}:{}", object.id, object.class_id, object.object_type),
-                egui::FontId::monospace(9.0),
-                Color32::from_gray(200),
-            );
-        }
+        let _ = (object.id, object.class_id, object.object_type);
     }
 }
 
-fn draw_bounds_label(painter: &Painter, rect: Rect, bounds: MapBounds) {
+fn draw_focus_label(painter: &Painter, rect: Rect, focus: MapFocus) {
     painter.text(
         rect.left_top() + Vec2::new(12.0, 12.0),
         egui::Align2::LEFT_TOP,
-        format!(
-            "bounds x:{}..{} y:{}..{}",
-            bounds.min_x, bounds.max_x, bounds.min_y, bounds.max_y
-        ),
+        format!("center {},{} ({:?})", focus.x, focus.y, focus.source),
         egui::FontId::monospace(12.0),
         Color32::from_gray(170),
     );
@@ -239,12 +220,11 @@ struct IsoProjector {
 }
 
 impl IsoProjector {
-    fn new(rect: Rect, bounds: MapBounds) -> Self {
-        let (center_x, center_y) = bounds.center();
+    fn new(rect: Rect, focus: MapFocus) -> Self {
         Self {
             rect,
-            center_x,
-            center_y,
+            center_x: focus.x as f32,
+            center_y: focus.y as f32,
             origin: rect.center(),
         }
     }
