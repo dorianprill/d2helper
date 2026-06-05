@@ -64,6 +64,18 @@ Building usually works with standard Rust plus desktop OpenGL/windowing
 development packages. Running packet capture may require elevated permissions or
 capabilities for the capture backend.
 
+On Linux, prefer file capabilities over running the whole GUI as root:
+
+```text
+cargo build
+sudo setcap cap_net_raw,cap_net_admin=eip target/debug/d2helper
+getcap target/debug/d2helper
+./target/debug/d2helper
+```
+
+Run the executable directly after setting capabilities. If you rebuild, Cargo
+may replace the binary and drop the file capabilities, so re-run `setcap`.
+
 ## Build
 
 From this repository:
@@ -120,6 +132,9 @@ logs/d2helper.log
 If `Start LoD capture` appears idle, check the toolbar status and this log file.
 Common causes are missing packet-capture permissions, a wrong selected network
 interface, or no matching LoD D2GS traffic on TCP port `4000`.
+
+On Linux the log includes `/proc/self/status` capability fields. `CapEff` must
+contain the `cap_net_raw` bit for libpnet to create a raw packet channel.
 
 ## Architecture
 

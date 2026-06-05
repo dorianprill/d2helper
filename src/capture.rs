@@ -62,6 +62,7 @@ impl Default for CaptureHandle {
 
 fn run_capture(shared: SharedOverlayState) {
     info!("starting LoD D2GS capture worker");
+    log_process_capabilities();
     log_capture_interfaces();
     replace_capture(&shared, CaptureSnapshot::waiting());
 
@@ -104,6 +105,7 @@ fn log_capture_interfaces() {
         info!(
             name = %interface.name,
             description = %interface.description,
+            index = interface.index,
             up = interface.is_up(),
             loopback = interface.is_loopback(),
             point_to_point = interface.is_point_to_point(),
@@ -118,6 +120,7 @@ fn log_capture_interfaces() {
     {
         info!(
             name = %candidate.name,
+            index = candidate.index,
             ips = ?candidate.ips,
             "first libd2-style capture interface candidate"
         );
@@ -130,6 +133,28 @@ fn log_capture_interfaces() {
 fn libd2_candidate(interface: &NetworkInterface) -> bool {
     interface.is_up() && !interface.is_loopback() && !interface.ips.is_empty()
 }
+
+#[cfg(target_os = "linux")]
+fn log_process_capabilities() {
+    match std::fs::read_to_string("/proc/self/status") {
+        Ok(status) => {
+            for line in status.lines().filter(|line| {
+                line.starts_with("CapInh:")
+                    || line.starts_with("CapPrm:")
+                    || line.starts_with("CapEff:")
+                    || line.starts_with("CapBnd:")
+                    || line.starts_with("CapAmb:")
+                    || line.starts_with("NoNewPrivs:")
+            }) {
+                info!(%line, "process capability status");
+            }
+        }
+        Err(error) => warn!(%error, "failed to read /proc/self/status"),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn log_process_capabilities() {}
 
 #[cfg(target_os = "windows")]
 fn libd2_candidate(interface: &NetworkInterface) -> bool {

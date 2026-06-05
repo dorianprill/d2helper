@@ -40,6 +40,8 @@ Follow-up UI refinements:
   Git repository at `https://github.com/dorianprill/libd2`.
 - Added persistent tracing output to `logs/d2helper.log` and surfaced capture
   worker waiting/failure status in the toolbar.
+- Added Linux process capability logging and packet-capture interface indices to
+  diagnose raw-channel permission and interface-binding failures.
 
 Challenges and decisions:
 
