@@ -16,19 +16,21 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] UI-safe snapshot layer between the blocking capture thread and egui
 - [x] Capture counters and packet parse-error display
 - [x] Bottom status strip for difficulty, act, area, seed, automap id, mode flags,
-      packet id, and entity counts
+      packet id, item-stat stream count, and entity counts
 - [x] Character list populated from decoded player packets
-- [x] Placeholder health and mana bars
+- [x] Raw local-player HP/mana/stamina values, regeneration counters, and
+      movement-verification bytes from decoded LoD packets
 - [x] Player-centered isometric automap debug renderer for revealed map cells
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
-- [x] Compact object/warp class-id labels for packet-observed entrances/objects
+- [x] Compact object/warp class-id labels with raw object state/portal metadata
+      where available
 - [x] Basic item marker colors for runes, uniques, sets, and other ground items
+- [x] Raw item-state flag highlighting from decoded item state packets
 - [ ] Generated static map background from seed/difficulty/act/area
 - [ ] Generated map borders, exits, and special rooms
 - [ ] Collision and pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
 - [ ] Exact Diablo II window tracking/anchoring
-- [ ] Decoded real health/mana values
 - [ ] Missile, spell, and projectile tracking
 - [ ] Item filtering rules and item inspection
 - [ ] Battle.net character download actions

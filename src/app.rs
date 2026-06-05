@@ -172,26 +172,80 @@ fn draw_character_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySn
                 "{} level {}  id {}  ({}, {})",
                 player.class_name, player.level, player.id, player.x, player.y
             ));
-            draw_placeholder_resource_bars(ui);
+            draw_resource_values(ui, player);
         });
         ui.add_space(4.0);
     }
 }
 
-fn draw_placeholder_resource_bars(ui: &mut egui::Ui) {
+fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnapshot) {
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(
+            Color32::from_rgb(220, 80, 85),
+            format!("HP {}", raw_value_label(player.life)),
+        );
+        ui.colored_label(
+            Color32::from_rgb(90, 130, 240),
+            format!("MP {}", raw_value_label(player.mana)),
+        );
+        ui.colored_label(
+            Color32::from_rgb(230, 210, 105),
+            format!("ST {}", raw_value_label(player.stamina)),
+        );
+        if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
+            ui.label(format!("regen {life_regen}/{mana_regen}"));
+        }
+        if let (Some(dx), Some(dy)) = (player.movement_dx, player.movement_dy) {
+            ui.label(format!("move {dx},{dy}"));
+        }
+    });
+
     let width = ui.available_width();
     let height = 8.0;
     let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, height * 2.0 + 2.0), egui::Sense::hover());
-    let hp_rect = egui::Rect::from_min_size(rect.min, egui::vec2(width, height));
-    let mana_rect = egui::Rect::from_min_size(
-        rect.min + egui::vec2(0.0, height + 2.0),
-        egui::vec2(width, height),
+        ui.allocate_exact_size(egui::vec2(width, height * 3.0 + 4.0), egui::Sense::hover());
+    draw_raw_resource_bar(
+        ui,
+        egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
+        player.life,
+        Color32::from_rgb(120, 30, 35),
     );
+    draw_raw_resource_bar(
+        ui,
+        egui::Rect::from_min_size(
+            rect.min + egui::vec2(0.0, height + 2.0),
+            egui::vec2(width, height),
+        ),
+        player.mana,
+        Color32::from_rgb(35, 55, 135),
+    );
+    draw_raw_resource_bar(
+        ui,
+        egui::Rect::from_min_size(
+            rect.min + egui::vec2(0.0, (height + 2.0) * 2.0),
+            egui::vec2(width, height),
+        ),
+        player.stamina,
+        Color32::from_rgb(120, 105, 35),
+    );
+}
+
+fn draw_raw_resource_bar(ui: &mut egui::Ui, rect: egui::Rect, value: Option<u16>, color: Color32) {
     ui.painter()
-        .rect_filled(hp_rect, 2.0, Color32::from_rgb(120, 30, 35));
-    ui.painter()
-        .rect_filled(mana_rect, 2.0, Color32::from_rgb(35, 55, 135));
+        .rect_filled(rect, 2.0, Color32::from_rgba_unmultiplied(80, 80, 80, 80));
+    let Some(value) = value else {
+        return;
+    };
+    let fraction = (value as f32 / 0x7fff as f32).clamp(0.0, 1.0);
+    let filled =
+        egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
+    ui.painter().rect_filled(filled, 2.0, color);
+}
+
+fn raw_value_label(value: Option<u16>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "--".to_owned())
 }
 
 fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot) {
@@ -234,6 +288,11 @@ fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapsho
         ui.label(format!("items {}", snapshot.items.len()));
         ui.separator();
         ui.label(format!("objects {}", snapshot.objects.len()));
+        ui.separator();
+        ui.label(format!(
+            "item stat streams {}",
+            snapshot.game.item_stat_updates
+        ));
         if let Some(packet_id) = snapshot.capture.last_packet_id {
             ui.separator();
             ui.label(format!("last packet 0x{packet_id:02X}"));

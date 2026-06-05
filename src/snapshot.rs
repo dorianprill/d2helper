@@ -64,6 +64,13 @@ impl OverlaySnapshot {
                     x: location.x(),
                     y: location.y(),
                     is_local: game_state.local_player_id() == Some(*id),
+                    life: player.vitals().and_then(|vitals| vitals.life()),
+                    mana: player.vitals().and_then(|vitals| vitals.mana()),
+                    stamina: player.vitals().and_then(|vitals| vitals.stamina()),
+                    life_regen: player.vitals().and_then(|vitals| vitals.life_regen()),
+                    mana_regen: player.vitals().and_then(|vitals| vitals.mana_regen()),
+                    movement_dx: player.movement().map(|movement| movement.dx()),
+                    movement_dy: player.movement().map(|movement| movement.dy()),
                 }
             })
             .collect();
@@ -93,6 +100,9 @@ impl OverlaySnapshot {
                     id: *id,
                     class_id: object.class_id(),
                     object_type: object.object_type(),
+                    state: object.state(),
+                    portal_flags: object.portal_flags(),
+                    is_targetable: object.is_targetable(),
                     x: location.x(),
                     y: location.y(),
                 }
@@ -118,6 +128,7 @@ impl OverlaySnapshot {
                     quality: packet_data
                         .and_then(|data| data.quality)
                         .map(|quality| format!("{:?}", quality)),
+                    state_flags: item.state_flags().map(ItemStateSnapshot::from),
                     x: ground_position.map(|position| position.0),
                     y: ground_position.map(|position| position.1),
                 }
@@ -303,6 +314,8 @@ pub struct GameSnapshot {
     pub is_hardcore: bool,
     /// Unit id for the local player once identified.
     pub local_player_id: Option<u32>,
+    /// Number of raw item-stat update streams seen from packet `0x3E`.
+    pub item_stat_updates: usize,
     /// Revealed automap cells received from D2GS map-reveal packets.
     pub revealed_tiles: Vec<RevealedTileSnapshot>,
 }
@@ -327,6 +340,7 @@ impl GameSnapshot {
             is_ladder: game_state.is_ladder(),
             is_hardcore: game_state.is_hardcore(),
             local_player_id: game_state.local_player_id(),
+            item_stat_updates: game_state.item_stat_updates().len(),
             revealed_tiles,
         }
     }
@@ -342,6 +356,13 @@ pub struct PlayerSnapshot {
     pub x: u16,
     pub y: u16,
     pub is_local: bool,
+    pub life: Option<u16>,
+    pub mana: Option<u16>,
+    pub stamina: Option<u16>,
+    pub life_regen: Option<u8>,
+    pub mana_regen: Option<u8>,
+    pub movement_dx: Option<u8>,
+    pub movement_dy: Option<u8>,
 }
 
 /// Monster/NPC unit data needed by the map markers and counters.
@@ -361,6 +382,9 @@ pub struct ObjectSnapshot {
     pub id: u32,
     pub class_id: u16,
     pub object_type: u8,
+    pub state: u32,
+    pub portal_flags: Option<u8>,
+    pub is_targetable: Option<u8>,
     pub x: u16,
     pub y: u16,
 }
@@ -373,8 +397,29 @@ pub struct ItemSnapshot {
     pub category: String,
     pub code: Option<String>,
     pub quality: Option<String>,
+    pub state_flags: Option<ItemStateSnapshot>,
     pub x: Option<u16>,
     pub y: Option<u16>,
+}
+
+/// Raw item-state flags observed from D2GS packet `0x7D`.
+#[derive(Debug, Clone, Copy)]
+pub struct ItemStateSnapshot {
+    pub unit_type: u8,
+    pub unit_id: u32,
+    pub and_value: u32,
+    pub flags: u32,
+}
+
+impl From<libd2r::ItemStateFlags> for ItemStateSnapshot {
+    fn from(flags: libd2r::ItemStateFlags) -> Self {
+        Self {
+            unit_type: flags.unit_type(),
+            unit_id: flags.unit_id(),
+            and_value: flags.and_value(),
+            flags: flags.flags(),
+        }
+    }
 }
 
 /// A single revealed automap cell.
@@ -551,6 +596,7 @@ mod tests {
             category: "Item".to_owned(),
             code: Some("r01".to_owned()),
             quality: None,
+            state_flags: None,
             x: Some(10),
             y: Some(30),
         });
@@ -560,6 +606,7 @@ mod tests {
             category: "Item".to_owned(),
             code: None,
             quality: None,
+            state_flags: None,
             x: None,
             y: None,
         });
@@ -581,6 +628,13 @@ mod tests {
             x: 10,
             y: 20,
             is_local: false,
+            life: None,
+            mana: None,
+            stamina: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
         });
         snapshot.players.push(PlayerSnapshot {
             id: 2,
@@ -590,6 +644,13 @@ mod tests {
             x: 30,
             y: 40,
             is_local: true,
+            life: Some(1000),
+            mana: Some(500),
+            stamina: Some(750),
+            life_regen: Some(1),
+            mana_regen: Some(2),
+            movement_dx: Some(3),
+            movement_dy: Some(4),
         });
 
         let focus = snapshot.map_focus().expect("focus");

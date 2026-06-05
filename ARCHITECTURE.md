@@ -75,7 +75,11 @@ the same module boundary can switch to channel-delivered snapshots.
 - capture counters and last parse error
 - act, area id, map seed/id, automap id, difficulty, and mode flags
 - revealed automap cells from map-reveal packets
-- players, NPCs, objects, and ground items
+- players with raw HP/mana/stamina, regeneration counters, and movement
+  verification bytes when known
+- NPCs, objects with raw object-state metadata, and items with raw item-state
+  flags when known
+- raw `0x3E` item-stat stream count
 
 Only ground items have map coordinates. Container/equipment items are kept out
 of the automap until item inspection views exist.
@@ -102,8 +106,8 @@ renderer a stable projection target.
   markers show compact class-id labels until static object-name data is wired.
 - No collision or pathfinding visualization yet.
 - No MPQ/DS1/DT1 art ingestion yet.
-- Health and mana bars are placeholders until the relevant packet fields are
-  decoded into `libd2r::GameState`.
+- Resource bars display raw packet-unit values, not true percentages, until
+  max-life/max-mana/max-stamina state is available.
 - Missile/projectile packets are not represented yet.
 - Capture lifecycle is start-only; stopping/restarting capture will need a
   controllable capture abstraction in `libd2r`.

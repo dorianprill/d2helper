@@ -14,8 +14,8 @@ Implemented:
 - Blocking LoD D2GS capture loop on a worker thread using
   `Client::start_with_events`.
 - Snapshot boundary between capture and UI via `Arc<RwLock<OverlaySnapshot>>`.
-- Character list populated from decoded player packets, with placeholder health
-  and mana bars plus disabled inspect/download buttons.
+- Character list populated from decoded player packets, with resource display
+  and disabled inspect/download buttons.
 - Bottom debug status strip for difficulty, act, area, map seed, packet id, and
   entity counts.
 - Isometric automap debug renderer for revealed map cells and live player, NPC,
@@ -54,6 +54,14 @@ Follow-up UI refinements:
   capture iteration is still fast and noisy.
 - Added compact class-id labels to packet-observed object/warp markers so
   entrance/object packets are visible before static object-name data exists.
+- Updated the locked `libd2r` Git dependency to the player-vitals/item-state
+  packet work.
+- Surfaced raw HP/mana/stamina, regeneration counters, and movement
+  verification bytes in the character panel.
+- Added raw `0x3E` item-stat stream counts to the status strip.
+- Added raw object state/portal metadata to object marker labels and
+  targetability styling.
+- Added item-state flag highlighting for ground item markers.
 
 Challenges and decisions:
 
@@ -71,7 +79,8 @@ Known gaps:
 - No generated-map layer from seed yet.
 - No collision/pathfinding overlay yet.
 - No MPQ-backed tile art.
-- Health and mana bars are placeholders until libd2r exposes decoded values.
+- Resource bars display raw packet-unit values until libd2r exposes the
+  corresponding max resource values.
 - Missile/projectile markers are not implemented.
 - Capture can be started but not stopped from the UI.
 
@@ -80,8 +89,8 @@ Next steps:
 1. Feed `libd2r` generated-map output into the automap renderer as a background
    layer.
 2. Add collision rendering once generated-map geometry is stable.
-3. Extend `libd2r` packet state for health/mana and missiles, then surface those
-   fields in the snapshot.
+3. Extend `libd2r` packet state for missiles and max resources, then surface
+   those fields in the snapshot.
 4. Add item inspection UI after richer item records are available.
 5. Add window anchoring/tracking so the debug view can behave like a practical
    overlay instead of a standalone transparent window.

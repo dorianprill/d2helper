@@ -1094,7 +1094,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 [[package]]
 name = "libd2r"
 version = "0.1.0"
-source = "git+https://github.com/dorianprill/libd2?branch=main#f1386a0cbd47c11811376563c6f9528fc284884c"
+source = "git+https://github.com/dorianprill/libd2?branch=main#eb171cd547d792334eb3041ad07a67565e1578c4"
 dependencies = [
  "pnet",
  "serde",

@@ -145,7 +145,13 @@ fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnap
 
 fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for item in &snapshot.items {
-        let _ = (item.id, item.action.as_str(), item.category.as_str());
+        let _ = (
+            item.id,
+            item.action.as_str(),
+            item.category.as_str(),
+            item.state_flags
+                .map(|flags| (flags.unit_type, flags.unit_id, flags.and_value)),
+        );
         let (Some(x), Some(y)) = (item.x, item.y) else {
             continue;
         };
@@ -162,11 +168,18 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
             }
             _ => Color32::from_rgb(220, 220, 220),
         };
-        painter.rect_filled(
-            Rect::from_center_size(position, Vec2::splat(5.0)),
-            1.0,
-            color,
-        );
+        let rect = Rect::from_center_size(position, Vec2::splat(5.0));
+        painter.rect_filled(rect, 1.0, color);
+        if let Some(flags) = item.state_flags {
+            if flags.flags != 0 {
+                painter.rect_stroke(
+                    rect.expand(2.0),
+                    1.0,
+                    Stroke::new(1.0, Color32::from_rgb(255, 230, 130)),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
 
         if let Some(code) = item.code.as_deref() {
             painter.text(
@@ -186,15 +199,27 @@ fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
         if !projector.rect.expand(32.0).contains(position) {
             continue;
         }
+        let color = match object.is_targetable {
+            Some(0) => Color32::from_rgb(120, 115, 145),
+            Some(_) => Color32::from_rgb(200, 175, 255),
+            None => Color32::from_rgb(180, 150, 255),
+        };
         painter.add(Shape::convex_polygon(
             diamond(position, 5.0, 5.0),
-            Color32::from_rgb(180, 150, 255),
+            color,
             Stroke::NONE,
         ));
+        let label = if object.state != 0 {
+            format!("W{} S{}", object.class_id, object.state)
+        } else if let Some(flags) = object.portal_flags {
+            format!("W{} P{}", object.class_id, flags)
+        } else {
+            format!("W{}", object.class_id)
+        };
         painter.text(
             position + Vec2::new(7.0, -8.0),
             egui::Align2::LEFT_CENTER,
-            format!("W{}", object.class_id),
+            label,
             egui::FontId::monospace(9.0),
             Color32::from_rgb(215, 200, 255),
         );
