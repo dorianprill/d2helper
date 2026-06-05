@@ -38,6 +38,8 @@ Follow-up UI refinements:
   the same visual progression in the character list and map sections.
 - Switched the `libd2r` dependency from a sibling path checkout to the public
   Git repository at `https://github.com/dorianprill/libd2`.
+- Added persistent tracing output to `logs/d2helper.log` and surfaced capture
+  worker waiting/failure status in the toolbar.
 
 Challenges and decisions:
 

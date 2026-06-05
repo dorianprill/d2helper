@@ -65,6 +65,11 @@ impl eframe::App for D2HelperApp {
                     } else {
                         RichText::new("capture idle").color(Color32::from_gray(180))
                     });
+                    if !snapshot.capture.status.is_empty() {
+                        ui.label(
+                            RichText::new(&snapshot.capture.status).color(Color32::from_gray(190)),
+                        );
+                    }
                     ui.separator();
                     ui.label("Opacity");
                     ui.add(egui::Slider::new(&mut self.background_opacity, 0..=255));

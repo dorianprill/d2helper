@@ -109,6 +109,18 @@ target\debug\d2helper.exe
 You can open the UI without Diablo II running. In that case, leave capture idle
 and use the window controls to inspect the shell.
 
+## Logs
+
+D2helper writes tracing output to stderr and to:
+
+```text
+logs/d2helper.log
+```
+
+If `Start LoD capture` appears idle, check the toolbar status and this log file.
+Common causes are missing packet-capture permissions, a wrong selected network
+interface, or no matching LoD D2GS traffic on TCP port `4000`.
+
 ## Architecture
 
 The capture loop is blocking, so d2helper runs it on a worker thread. The worker

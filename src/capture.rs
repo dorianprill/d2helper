@@ -4,13 +4,15 @@
 //! process exits. D2helper starts it on a dedicated thread so the egui event loop
 //! can keep repainting while packets are decoded and snapshots are published.
 
-use std::thread;
+use std::{any::Any, thread};
 
 use libd2r::Client;
+use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
 use crate::snapshot::{
-    replace_snapshot, CaptureCounters, CaptureSnapshot, OverlaySnapshot, SharedOverlayState,
+    replace_capture, replace_snapshot, CaptureCounters, CaptureSnapshot, OverlaySnapshot,
+    SharedOverlayState,
 };
 
 /// Handle used by the UI thread to start the capture worker once.
@@ -60,6 +62,10 @@ impl Default for CaptureHandle {
 
 fn run_capture(shared: SharedOverlayState) {
     info!("starting LoD D2GS capture worker");
+    log_capture_interfaces();
+    replace_capture(&shared, CaptureSnapshot::waiting());
+
+    let worker_shared = shared.clone();
     let result = std::panic::catch_unwind(move || {
         let mut client = Client::new();
         let mut counters = CaptureCounters::default();
@@ -67,11 +73,71 @@ fn run_capture(shared: SharedOverlayState) {
         client.start_with_events(|event, game_state| {
             counters.record(&event);
             let snapshot = OverlaySnapshot::from_game_state(game_state, counters.snapshot(true));
-            replace_snapshot(&shared, snapshot);
+            replace_snapshot(&worker_shared, snapshot);
         });
     });
 
-    if result.is_err() {
-        error!("capture worker panicked");
+    if let Err(payload) = result {
+        let error = panic_payload_label(payload.as_ref());
+        error!(%error, "capture worker panicked");
+        replace_capture(&shared, CaptureSnapshot::failed(error));
     }
+}
+
+fn panic_payload_label(payload: &(dyn Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+        (*message).to_owned()
+    } else {
+        "capture worker panicked with non-string payload".to_owned()
+    }
+}
+
+fn log_capture_interfaces() {
+    let interfaces = datalink::interfaces();
+    info!(
+        count = interfaces.len(),
+        "available packet-capture interfaces"
+    );
+    for interface in &interfaces {
+        info!(
+            name = %interface.name,
+            description = %interface.description,
+            up = interface.is_up(),
+            loopback = interface.is_loopback(),
+            point_to_point = interface.is_point_to_point(),
+            ips = ?interface.ips,
+            "packet-capture interface"
+        );
+    }
+
+    if let Some(candidate) = interfaces
+        .iter()
+        .find(|interface| libd2_candidate(interface))
+    {
+        info!(
+            name = %candidate.name,
+            ips = ?candidate.ips,
+            "first libd2-style capture interface candidate"
+        );
+    } else {
+        warn!("no libd2-style capture interface candidate found");
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn libd2_candidate(interface: &NetworkInterface) -> bool {
+    interface.is_up() && !interface.is_loopback() && !interface.ips.is_empty()
+}
+
+#[cfg(target_os = "windows")]
+fn libd2_candidate(interface: &NetworkInterface) -> bool {
+    use pnet::ipnetwork::IpNetwork;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    interface
+        .ips
+        .first()
+        .is_some_and(|ip| *ip != IpNetwork::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0).unwrap())
 }

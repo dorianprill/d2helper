@@ -11,7 +11,9 @@ eframe = { version = "0.32.3", default-features = false, features = [
     "glow",
 ] }
 libd2r = { git = "https://github.com/dorianprill/libd2", branch = "main" }
+pnet = "0.29.0"
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

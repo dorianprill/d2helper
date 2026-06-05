@@ -164,6 +164,7 @@ impl OverlaySnapshot {
 #[derive(Debug, Default, Clone)]
 pub struct CaptureSnapshot {
     pub running: bool,
+    pub status: String,
     pub total_events: u64,
     pub applied_messages: u64,
     pub parse_errors: u64,
@@ -176,6 +177,27 @@ impl CaptureSnapshot {
     pub fn starting() -> Self {
         Self {
             running: true,
+            status: "starting capture worker".to_owned(),
+            ..Self::default()
+        }
+    }
+
+    /// Marks the worker as blocked in libpnet waiting for matching traffic.
+    pub fn waiting() -> Self {
+        Self {
+            running: true,
+            status: "waiting for LoD D2GS traffic on TCP port 4000".to_owned(),
+            ..Self::default()
+        }
+    }
+
+    /// Marks the worker as stopped because the capture loop failed.
+    pub fn failed(error: String) -> Self {
+        Self {
+            running: false,
+            status: "capture stopped".to_owned(),
+            parse_errors: 1,
+            last_error: Some(error),
             ..Self::default()
         }
     }
@@ -214,6 +236,11 @@ impl CaptureCounters {
     pub fn snapshot(&self, running: bool) -> CaptureSnapshot {
         CaptureSnapshot {
             running,
+            status: if running {
+                "receiving LoD D2GS traffic".to_owned()
+            } else {
+                "capture stopped".to_owned()
+            },
             total_events: self.total_events,
             applied_messages: self.applied_messages,
             parse_errors: self.parse_errors,
@@ -383,6 +410,13 @@ impl MapBounds {
 pub fn replace_snapshot(shared: &SharedOverlayState, snapshot: OverlaySnapshot) {
     if let Ok(mut guard) = shared.write() {
         *guard = snapshot;
+    }
+}
+
+/// Replaces only the capture portion of the shared snapshot.
+pub fn replace_capture(shared: &SharedOverlayState, capture: CaptureSnapshot) {
+    if let Ok(mut guard) = shared.write() {
+        guard.capture = capture;
     }
 }
 
