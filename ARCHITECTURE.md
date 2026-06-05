@@ -29,6 +29,9 @@ ConnectionEvent + libd2r::GameState
           |
           v
 capture worker thread <--- read-only libd2r::GameData from Classic/LoD MPQs
+          ^
+          |
+ optional generated-map JSON from @diablo2/map-compatible output
           |
           v
 OverlaySnapshot in Arc<RwLock<_>>
@@ -44,7 +47,11 @@ egui app panels + automap renderer
 - `capture`: owns the blocking packet-capture worker. The worker starts
   `libd2r::Client::start_with_events`, records packet counters, and publishes a
   fresh overlay snapshot after every event. It also loads optional read-only
-  Classic/LoD MPQ static data once at startup for name resolution.
+  Classic/LoD MPQ static data once at startup for name resolution and optional
+  generated-map JSON for wall/exit rendering.
+- `generated_map`: caches generated collision maps keyed by seed, difficulty,
+  and area. It imports `@diablo2/map`-compatible JSON from
+  `D2HELPER_MAP_JSON` or `D2HELPER_MAP_JSON_DIR`.
 - `snapshot`: defines the thread boundary between packet capture and rendering.
   It copies selected `GameState` values into cloneable UI structs so egui never
   depends on a live parser borrow. When `GameData` is available, monster,
@@ -78,10 +85,13 @@ the same module boundary can switch to channel-delivered snapshots.
 - act, area id, map seed/id, automap id, difficulty, and mode flags
 - revealed automap cells from map-reveal packets
 - players with raw HP/mana/stamina, regeneration counters, and movement
-  verification bytes when known
+  verification bytes when known; roster membership is separate from whether a
+  current world position should be rendered
 - NPCs, objects with raw object-state metadata, and items with raw item-state
   flags when known
 - optional MPQ-backed monster, object, and item names
+- optional generated-map collision and exit data for the current seed,
+  difficulty, and area
 - raw `0x3E` item-stat stream count
 
 Only ground items have map coordinates. Container/equipment items are kept out
@@ -101,6 +111,12 @@ diamond cells and simple markers instead of MPQ/DT1 tile art. This makes it
 useful immediately for parser validation and gives the future generated-map
 renderer a stable projection target.
 
+When generated-map JSON is configured, the renderer draws blocked collision
+cells as the wall layer and generated exit objects as entrance markers. The JSON
+uses map-local coordinates plus a world offset; d2helper applies that offset
+before projecting the collision and exit points into the same isometric space as
+live packet units.
+
 Packet-observed `0x07 MapReveal` tile coordinates are not treated as exact unit
 coordinates. In current LoD captures they line up with unit/NPC coordinates
 after adding the legacy `4096` world-origin offset, so the debug renderer
@@ -115,10 +131,9 @@ known-position players.
 
 ## Current Limitations
 
-- No generated-map background from seed yet.
-- No generated-map borders, exits, or special-room outlines yet; only live
-  packet-observed revealed tiles and world objects are rendered.
-- No collision or pathfinding visualization yet.
+- No native generated-map background from seed yet; generated collision maps
+  must currently be supplied as JSON from an external map generator.
+- No pathfinding visualization yet.
 - No MPQ/DS1/DT1 art ingestion yet.
 - MPQ static data is used for labels only; no tile art or map asset data is
   loaded by d2helper yet.

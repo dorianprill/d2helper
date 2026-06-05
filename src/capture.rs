@@ -15,6 +15,7 @@ use libd2r::{Client, ConnectionEvent, GameData, ServerMessageParseError};
 use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
+use crate::generated_map::GeneratedMapCache;
 use crate::snapshot::{
     replace_capture, replace_snapshot, CaptureCounters, CaptureSnapshot, OverlaySnapshot,
     SharedOverlayState,
@@ -76,14 +77,17 @@ fn run_capture(shared: SharedOverlayState) {
         let mut client = Client::new();
         let mut counters = CaptureCounters::default();
         let game_data = load_static_game_data();
+        let mut generated_maps = GeneratedMapCache::from_env();
 
         client.start_with_events(|event, game_state| {
             log_connection_event(&event);
             counters.record(&event);
-            let snapshot = OverlaySnapshot::from_game_state_with_data(
+            let generated_map = generated_maps.current_map(game_state);
+            let snapshot = OverlaySnapshot::from_game_state_with_data_and_map(
                 game_state,
                 counters.snapshot(true),
                 game_data.as_deref(),
+                generated_map,
             );
             replace_snapshot(&worker_shared, snapshot);
         });

@@ -5,12 +5,13 @@
 //! module copies only the fields needed by the overlay into small, cloneable
 //! structs. This also keeps rendering insulated from packet-parser internals.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
 use libd2r::{
-    ConnectionEvent, Difficulty, GameData, GameState, ItemPlacement, ServerMessageParseError,
+    ConnectionEvent, Difficulty, GameData, GameState, GeneratedMap, ItemPlacement,
+    ServerMessageParseError,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
@@ -31,6 +32,8 @@ pub struct OverlaySnapshot {
     pub objects: Vec<ObjectSnapshot>,
     /// Known items. Only ground items have world coordinates.
     pub items: Vec<ItemSnapshot>,
+    /// Generated static collision map for the current seed/difficulty/area.
+    pub generated_map: Option<Arc<GeneratedMap>>,
 }
 
 impl Default for OverlaySnapshot {
@@ -42,6 +45,7 @@ impl Default for OverlaySnapshot {
             npcs: Vec::new(),
             objects: Vec::new(),
             items: Vec::new(),
+            generated_map: None,
         }
     }
 }
@@ -64,6 +68,17 @@ impl OverlaySnapshot {
         capture: CaptureSnapshot,
         game_data: Option<&GameData>,
     ) -> Self {
+        Self::from_game_state_with_data_and_map(game_state, capture, game_data, None)
+    }
+
+    /// Copies current game state and optionally attaches a generated collision
+    /// map for the active area.
+    pub fn from_game_state_with_data_and_map(
+        game_state: &GameState,
+        capture: CaptureSnapshot,
+        game_data: Option<&GameData>,
+        generated_map: Option<Arc<GeneratedMap>>,
+    ) -> Self {
         let players = game_state
             .players()
             .iter()
@@ -76,6 +91,7 @@ impl OverlaySnapshot {
                     level: player.level(),
                     x: location.x(),
                     y: location.y(),
+                    world_location_known: player.world_location_known(),
                     is_local: game_state.local_player_id() == Some(*id),
                     life: player.vitals().and_then(|vitals| vitals.life()),
                     mana: player.vitals().and_then(|vitals| vitals.mana()),
@@ -167,6 +183,7 @@ impl OverlaySnapshot {
             npcs,
             objects,
             items,
+            generated_map,
         }
     }
 
@@ -438,6 +455,7 @@ pub struct PlayerSnapshot {
     pub level: u32,
     pub x: u16,
     pub y: u16,
+    pub world_location_known: bool,
     pub is_local: bool,
     pub life: Option<u16>,
     pub mana: Option<u16>,
@@ -450,7 +468,7 @@ pub struct PlayerSnapshot {
 
 impl PlayerSnapshot {
     fn has_known_world_position(&self) -> bool {
-        self.is_local || self.x != 0 || self.y != 0
+        self.world_location_known
     }
 
     fn distance_to(&self, x: u16, y: u16) -> u16 {
@@ -736,6 +754,7 @@ mod tests {
             level: 1,
             x: 10,
             y: 20,
+            world_location_known: true,
             is_local: false,
             life: None,
             mana: None,
@@ -752,6 +771,7 @@ mod tests {
             level: 1,
             x: 30,
             y: 40,
+            world_location_known: true,
             is_local: true,
             life: Some(1000),
             mana: Some(500),
@@ -779,6 +799,7 @@ mod tests {
             level: 1,
             x: 0,
             y: 0,
+            world_location_known: true,
             is_local: true,
             life: None,
             mana: None,

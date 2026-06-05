@@ -24,6 +24,8 @@ Options:
 Environment:
   D2HELPER_D2_PATH       Preferred Diablo II Classic/LoD install path
   LIBD2_D2_INSTALL       Fallback install path used by libd2 tests/tools
+  D2HELPER_MAP_JSON      Optional @diablo2/map JSON file for wall rendering
+  D2HELPER_MAP_JSON_DIR  Optional generated-map JSON cache directory
   D2HELPER_SKIP_SETCAP=1 Same as --skip-setcap
 USAGE
 }

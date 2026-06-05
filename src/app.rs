@@ -28,7 +28,7 @@ impl D2HelperApp {
         Self {
             shared: empty_shared_state(),
             capture: CaptureHandle::new(),
-            background_opacity: 190,
+            background_opacity: 255,
             decorations_enabled: true,
             maximized: false,
         }
@@ -300,6 +300,12 @@ fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapsho
         ui.separator();
         ui.label(format!("objects {}", snapshot.objects.len()));
         ui.separator();
+        ui.label(if snapshot.generated_map.is_some() {
+            "walls loaded"
+        } else {
+            "walls live-only"
+        });
+        ui.separator();
         ui.label(format!(
             "item stat streams {}",
             snapshot.game.item_stat_updates
@@ -323,6 +329,12 @@ fn draw_map_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot
             "revealed tiles {}",
             snapshot.game.revealed_tiles.len()
         ));
+        if let Some(map) = snapshot.generated_map.as_deref() {
+            ui.label(format!(
+                "generated {} {}x{}",
+                map.name, map.size.width, map.size.height
+            ));
+        }
         for (area, count) in count_by_area(&snapshot.game.revealed_tiles)
             .into_iter()
             .take(4)

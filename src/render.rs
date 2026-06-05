@@ -6,11 +6,12 @@
 //! can reuse the same snapshot and projection boundary.
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use libd2r::{GeneratedMap, MapObjectKind};
 
 use crate::snapshot::{MapFocus, OverlaySnapshot};
 
-const TILE_WIDTH: f32 = 22.0;
-const TILE_HEIGHT: f32 = 11.0;
+const TILE_WIDTH: f32 = 16.0;
+const TILE_HEIGHT: f32 = 8.0;
 const AUTOMAP_TILE_WORLD_OFFSET: u16 = 4096;
 
 /// Draws the current map snapshot into the provided egui allocation.
@@ -39,6 +40,7 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
     };
 
     let projector = IsoProjector::new(rect, focus);
+    draw_generated_map(&painter, &projector, snapshot);
     draw_revealed_tiles(&painter, &projector, snapshot);
     draw_objects(&painter, &projector, snapshot);
     draw_items(&painter, &projector, snapshot);
@@ -105,6 +107,90 @@ mod tests {
             (5200, 5100)
         );
     }
+
+    #[test]
+    fn local_axis_range_clamps_visible_world_to_generated_map_bounds() {
+        assert_eq!(local_axis_range(5200, 5250, 5190, 40), Some((10, 39)));
+        assert_eq!(local_axis_range(5100, 5110, 5190, 40), None);
+    }
+}
+
+fn draw_generated_map(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
+    let Some(map) = snapshot.generated_map.as_deref() else {
+        return;
+    };
+
+    draw_generated_collision(painter, projector, map);
+    draw_generated_exits(painter, projector, map);
+}
+
+fn draw_generated_collision(painter: &Painter, projector: &IsoProjector, map: &GeneratedMap) {
+    let bounds = projector.visible_world_bounds(10.0);
+    let Some((min_x, max_x)) =
+        local_axis_range(bounds.min_x, bounds.max_x, map.offset.x, map.size.width)
+    else {
+        return;
+    };
+    let Some((min_y, max_y)) =
+        local_axis_range(bounds.min_y, bounds.max_y, map.offset.y, map.size.height)
+    else {
+        return;
+    };
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            if !map.collision.is_blocked(x, y).unwrap_or(false) {
+                continue;
+            }
+            let center = projector.project_i32(map.offset.x + x as i32, map.offset.y + y as i32);
+            if !projector.rect.expand(8.0).contains(center) {
+                continue;
+            }
+            painter.add(Shape::convex_polygon(
+                diamond(center, TILE_WIDTH * 0.42, TILE_HEIGHT * 0.42),
+                Color32::from_rgba_unmultiplied(115, 130, 135, 115),
+                Stroke::NONE,
+            ));
+        }
+    }
+}
+
+fn draw_generated_exits(painter: &Painter, projector: &IsoProjector, map: &GeneratedMap) {
+    for object in &map.objects {
+        if object.kind != MapObjectKind::Exit {
+            continue;
+        }
+        let position = projector.project_i32(
+            map.offset.x + object.position.x,
+            map.offset.y + object.position.y,
+        );
+        if !projector.rect.expand(48.0).contains(position) {
+            continue;
+        }
+        let color = if object.is_good_exit {
+            Color32::from_rgb(255, 210, 90)
+        } else {
+            Color32::from_rgb(90, 220, 230)
+        };
+        painter.add(Shape::convex_polygon(
+            diamond(position, 8.0, 8.0),
+            color,
+            Stroke::new(1.0, Color32::from_rgb(20, 25, 28)),
+        ));
+        let label = object
+            .name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("exit {}", object.id));
+        painter.text(
+            position + Vec2::new(9.0, -12.0),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::monospace(10.0),
+            color,
+        );
+    }
 }
 
 fn draw_revealed_tiles(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
@@ -125,7 +211,7 @@ fn draw_revealed_tiles(painter: &Painter, projector: &IsoProjector, snapshot: &O
 
 fn draw_players(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for player in &snapshot.players {
-        if !player.is_local && player.x == 0 && player.y == 0 {
+        if !player.world_location_known {
             continue;
         }
         let position = projector.project(player.x, player.y);
@@ -305,6 +391,20 @@ fn draw_focus_label(painter: &Painter, rect: Rect, focus: MapFocus) {
     );
 }
 
+fn local_axis_range(
+    min_world: i32,
+    max_world: i32,
+    map_offset: i32,
+    map_size: u32,
+) -> Option<(u32, u32)> {
+    if map_size == 0 {
+        return None;
+    }
+    let min = (min_world - map_offset).max(0);
+    let max = (max_world - map_offset).min(map_size as i32 - 1);
+    (min <= max).then_some((min as u32, max as u32))
+}
+
 fn diamond(center: Pos2, half_width: f32, half_height: f32) -> Vec<Pos2> {
     vec![
         center + Vec2::new(0.0, -half_height),
@@ -312,6 +412,14 @@ fn diamond(center: Pos2, half_width: f32, half_height: f32) -> Vec<Pos2> {
         center + Vec2::new(0.0, half_height),
         center + Vec2::new(-half_width, 0.0),
     ]
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WorldBounds {
+    min_x: i32,
+    min_y: i32,
+    max_x: i32,
+    max_y: i32,
 }
 
 struct IsoProjector {
@@ -332,8 +440,46 @@ impl IsoProjector {
     }
 
     fn project(&self, x: u16, y: u16) -> Pos2 {
+        self.project_i32(x as i32, y as i32)
+    }
+
+    fn project_i32(&self, x: i32, y: i32) -> Pos2 {
         let dx = x as f32 - self.center_x;
         let dy = y as f32 - self.center_y;
         self.origin + Vec2::new((dx - dy) * TILE_WIDTH * 0.5, (dx + dy) * TILE_HEIGHT * 0.5)
+    }
+
+    fn visible_world_bounds(&self, margin_tiles: f32) -> WorldBounds {
+        let rect = self.rect.expand(TILE_WIDTH.max(TILE_HEIGHT) * margin_tiles);
+        let mut bounds = WorldBounds {
+            min_x: i32::MAX,
+            min_y: i32::MAX,
+            max_x: i32::MIN,
+            max_y: i32::MIN,
+        };
+
+        for corner in [
+            rect.left_top(),
+            rect.right_top(),
+            rect.left_bottom(),
+            rect.right_bottom(),
+        ] {
+            let (x, y) = self.unproject(corner);
+            bounds.min_x = bounds.min_x.min(x.floor() as i32);
+            bounds.min_y = bounds.min_y.min(y.floor() as i32);
+            bounds.max_x = bounds.max_x.max(x.ceil() as i32);
+            bounds.max_y = bounds.max_y.max(y.ceil() as i32);
+        }
+
+        bounds
+    }
+
+    fn unproject(&self, position: Pos2) -> (f32, f32) {
+        let sx = (position.x - self.origin.x) / (TILE_WIDTH * 0.5);
+        let sy = (position.y - self.origin.y) / (TILE_HEIGHT * 0.5);
+        (
+            self.center_x + (sx + sy) * 0.5,
+            self.center_y + (sy - sx) * 0.5,
+        )
     }
 }

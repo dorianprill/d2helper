@@ -20,7 +20,8 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] Character list populated from decoded player packets
 - [x] Raw local-player HP/mana/stamina values, regeneration counters, and
       movement-verification bytes from decoded LoD packets
-- [x] Player-centered isometric automap debug renderer for revealed map cells
+- [x] Player-centered isometric automap debug renderer for revealed map cells,
+      generated collision walls, and live markers
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
 - [x] Read-only Classic/LoD MPQ static-data loading through `libd2r`
 - [x] Monster, object, and item labels resolved from `MonStats.bin`,
@@ -30,9 +31,12 @@ renders a compact automap-style view. It does not read or modify game memory.
       available
 - [x] Basic item marker colors for runes, uniques, sets, and other ground items
 - [x] Raw item-state flag highlighting from decoded item state packets
-- [ ] Generated static map background from seed/difficulty/act/area
-- [ ] Generated map borders, exits, and special rooms
-- [ ] Collision and pathfinding visualization
+- [x] Optional generated-map JSON loading for current seed/difficulty/area via
+      `D2HELPER_MAP_JSON` or `D2HELPER_MAP_JSON_DIR`
+- [x] Generated collision wall rendering and generated exit markers when map
+      JSON is available
+- [ ] Native generated static map background from seed/difficulty/act/area
+- [ ] Pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
 - [ ] Exact Diablo II window tracking/anchoring
 - [ ] Missile, spell, and projectile tracking
@@ -157,6 +161,28 @@ LIBD2_D2_INSTALL
 
 The install directory is only read. It should contain legacy MPQs such as
 `patch_d2.mpq`, `d2data.mpq`, and usually `d2exp.mpq`.
+
+For wall and entrance rendering, d2helper needs generated collision JSON because
+live D2GS packets do not contain full wall data. It accepts JSON compatible with
+the `@diablo2/map` generator:
+
+```text
+D2HELPER_MAP_JSON=/path/to/current-area-or-act-response.json
+D2HELPER_MAP_JSON_DIR=/path/to/generated-map-cache
+```
+
+Directory mode checks names such as:
+
+```text
+0x3607656c-2-74.json
+0x3607656c_2_74.json
+906454380-2-74.json
+74.json
+```
+
+The fields are map seed, difficulty index (`0` normal, `1` nightmare, `2`
+hell), and area id. The JSON may be one generated level or an act/response
+containing a `levels` array.
 
 ## Logs
 

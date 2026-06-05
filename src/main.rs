@@ -6,6 +6,7 @@
 
 mod app;
 mod capture;
+mod generated_map;
 mod render;
 mod snapshot;
 

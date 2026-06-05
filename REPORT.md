@@ -77,6 +77,17 @@ Follow-up UI refinements:
   live world-entity bounds, and normalizing LoD `0x07 MapReveal` tile origins
   with the temporary `4096` world-coordinate offset when that is closer to the
   current focus.
+- Started the overlay at full background opacity (`255`) by default.
+- Reduced the isometric tile scale so the automap shows more surrounding world
+  at the same window size.
+- Consumed libd2r's split between player roster membership and current
+  world-location visibility. Player rows remain in the character list after
+  visibility-only `0x0A` removals, while map markers disappear until a fresh
+  position arrives.
+- Added optional generated-map JSON loading from `D2HELPER_MAP_JSON` or
+  `D2HELPER_MAP_JSON_DIR`, keyed by current seed, difficulty, and area.
+- Added generated collision-wall rendering and generated exit labels when
+  `@diablo2/map`-compatible JSON is available.
 
 Challenges and decisions:
 
@@ -92,11 +103,15 @@ Challenges and decisions:
   packets use unit-world coordinates. The renderer currently applies a
   nearest-focus `4096` offset normalization for visible debug output; generated
   map origins should replace this heuristic later.
+- Full wall/collision data is not present in the live packet stream. The first
+  wall layer therefore consumes generated-map JSON from the reverse-engineered
+  map generator contract until native Rust generation is available.
 
 Known gaps:
 
-- No generated-map layer from seed yet.
-- No collision/pathfinding overlay yet.
+- No native generated-map layer from seed yet; wall rendering currently needs
+  externally generated JSON.
+- No pathfinding overlay yet.
 - No MPQ-backed tile art or DS1/DT1 map asset rendering.
 - Resource bars display raw packet-unit values until libd2r exposes the
   corresponding max resource values.
@@ -105,9 +120,9 @@ Known gaps:
 
 Next steps:
 
-1. Feed `libd2r` generated-map output into the automap renderer as a background
-   layer.
-2. Add collision rendering once generated-map geometry is stable.
+1. Add a first-class generated-map producer path so d2helper can invoke/cache
+   map generation from seed/difficulty/area without manual JSON setup.
+2. Add pathfinding visualization over the generated collision grid.
 3. Extend `libd2r` packet state for missiles and max resources, then surface
    those fields in the snapshot.
 4. Add item inspection UI after richer item records are available.
@@ -123,4 +138,4 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 git diff --check
 ```
 
-Result: passed. 7 tests.
+Result: passed. 9 tests.
