@@ -62,6 +62,13 @@ Follow-up UI refinements:
 - Added raw object state/portal metadata to object marker labels and
   targetability styling.
 - Added item-state flag highlighting for ground item markers.
+- Switched the `libd2r` dependency back to the sibling `../libd2` checkout so
+  d2helper can consume newly implemented library APIs during suite development.
+- Added optional read-only Classic/LoD MPQ static-data loading on the capture
+  worker. The path is resolved from `D2HELPER_D2_PATH`, `LIBD2_D2_INSTALL`, or a
+  `~/Games/Diablo II*` fallback.
+- Added MPQ-backed monster, object, and item labels to snapshots and the
+  automap renderer, while preserving raw class/code labels as fallbacks.
 
 Challenges and decisions:
 
@@ -78,7 +85,7 @@ Known gaps:
 
 - No generated-map layer from seed yet.
 - No collision/pathfinding overlay yet.
-- No MPQ-backed tile art.
+- No MPQ-backed tile art or DS1/DT1 map asset rendering.
 - Resource bars display raw packet-unit values until libd2r exposes the
   corresponding max resource values.
 - Missile/projectile markers are not implemented.
@@ -94,3 +101,14 @@ Next steps:
 4. Add item inspection UI after richer item records are available.
 5. Add window anchoring/tracking so the debug view can behave like a practical
    overlay instead of a standalone transparent window.
+
+Verification:
+
+```text
+cargo fmt --check
+cargo test
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+git diff --check
+```
+
+Result: passed. 5 tests.

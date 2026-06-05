@@ -130,6 +130,9 @@ fn draw_players(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
 fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for npc in &snapshot.npcs {
         let position = projector.project(npc.x, npc.y);
+        if !projector.rect.expand(32.0).contains(position) {
+            continue;
+        }
         let life = npc.life_percent.unwrap_or(100);
         let color = if life < 35 {
             Color32::from_rgb(160, 45, 45)
@@ -138,8 +141,22 @@ fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnap
         };
         let radius = if npc.state.is_some() { 3.5 } else { 3.0 };
         painter.circle_filled(position, radius, color);
+        let label = npc
+            .name
+            .as_deref()
+            .map(str::to_owned)
+            .or_else(|| npc.class_id.map(|class_id| format!("M{class_id}")));
+        if let Some(label) = label {
+            painter.text(
+                position + Vec2::new(6.0, -10.0),
+                egui::Align2::LEFT_CENTER,
+                label,
+                egui::FontId::proportional(9.0),
+                Color32::from_rgb(255, 180, 175),
+            );
+        }
 
-        let _ = (npc.id, npc.class_id);
+        let _ = npc.id;
     }
 }
 
@@ -181,11 +198,11 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
             }
         }
 
-        if let Some(code) = item.code.as_deref() {
+        if let Some(label) = item.name.as_deref().or(item.code.as_deref()) {
             painter.text(
                 position + Vec2::new(6.0, 8.0),
                 egui::Align2::LEFT_CENTER,
-                code,
+                label,
                 egui::FontId::monospace(9.0),
                 Color32::from_gray(210),
             );
@@ -209,7 +226,17 @@ fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
             color,
             Stroke::NONE,
         ));
-        let label = if object.state != 0 {
+        let object_name = object
+            .name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty());
+        let label = if let Some(name) = object_name {
+            if object.state != 0 {
+                format!("{name} S{}", object.state)
+            } else {
+                name.to_owned()
+            }
+        } else if object.state != 0 {
             format!("W{} S{}", object.class_id, object.state)
         } else if let Some(flags) = object.portal_flags {
             format!("W{} P{}", object.class_id, flags)

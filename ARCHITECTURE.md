@@ -28,7 +28,7 @@ libd2r::Client capture loop
 ConnectionEvent + libd2r::GameState
           |
           v
-capture worker thread
+capture worker thread <--- read-only libd2r::GameData from Classic/LoD MPQs
           |
           v
 OverlaySnapshot in Arc<RwLock<_>>
@@ -43,10 +43,12 @@ egui app panels + automap renderer
   transparent native egui viewport.
 - `capture`: owns the blocking packet-capture worker. The worker starts
   `libd2r::Client::start_with_events`, records packet counters, and publishes a
-  fresh overlay snapshot after every event.
+  fresh overlay snapshot after every event. It also loads optional read-only
+  Classic/LoD MPQ static data once at startup for name resolution.
 - `snapshot`: defines the thread boundary between packet capture and rendering.
   It copies selected `GameState` values into cloneable UI structs so egui never
-  depends on a live parser borrow.
+  depends on a live parser borrow. When `GameData` is available, monster,
+  object, and item ids are resolved into display names during snapshot creation.
 - `app`: owns egui layout: toolbar, character list, bottom status strip, and map
   section.
 - `render`: draws the current snapshot as a simple automap-style isometric
@@ -79,6 +81,7 @@ the same module boundary can switch to channel-delivered snapshots.
   verification bytes when known
 - NPCs, objects with raw object-state metadata, and items with raw item-state
   flags when known
+- optional MPQ-backed monster, object, and item names
 - raw `0x3E` item-stat stream count
 
 Only ground items have map coordinates. Container/equipment items are kept out
@@ -102,10 +105,11 @@ renderer a stable projection target.
 
 - No generated-map background from seed yet.
 - No generated-map borders, exits, or special-room outlines yet; only live
-  packet-observed revealed tiles and world objects are rendered. Object/warp
-  markers show compact class-id labels until static object-name data is wired.
+  packet-observed revealed tiles and world objects are rendered.
 - No collision or pathfinding visualization yet.
 - No MPQ/DS1/DT1 art ingestion yet.
+- MPQ static data is used for labels only; no tile art or map asset data is
+  loaded by d2helper yet.
 - Resource bars display raw packet-unit values, not true percentages, until
   max-life/max-mana/max-stamina state is available.
 - Missile/projectile packets are not represented yet.

@@ -4,9 +4,14 @@
 //! process exits. D2helper starts it on a dedicated thread so the egui event loop
 //! can keep repainting while packets are decoded and snapshots are published.
 
-use std::{any::Any, thread};
+use std::{
+    any::Any,
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
+};
 
-use libd2r::{Client, ConnectionEvent, ServerMessageParseError};
+use libd2r::{Client, ConnectionEvent, GameData, ServerMessageParseError};
 use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
@@ -70,11 +75,16 @@ fn run_capture(shared: SharedOverlayState) {
     let result = std::panic::catch_unwind(move || {
         let mut client = Client::new();
         let mut counters = CaptureCounters::default();
+        let game_data = load_static_game_data();
 
         client.start_with_events(|event, game_state| {
             log_connection_event(&event);
             counters.record(&event);
-            let snapshot = OverlaySnapshot::from_game_state(game_state, counters.snapshot(true));
+            let snapshot = OverlaySnapshot::from_game_state_with_data(
+                game_state,
+                counters.snapshot(true),
+                game_data.as_deref(),
+            );
             replace_snapshot(&worker_shared, snapshot);
         });
     });
@@ -147,6 +157,69 @@ fn panic_payload_label(payload: &(dyn Any + Send)) -> String {
     } else {
         "capture worker panicked with non-string payload".to_owned()
     }
+}
+
+fn load_static_game_data() -> Option<Arc<GameData>> {
+    let Some(path) = static_game_data_path() else {
+        warn!(
+            "no Classic/LoD install path found for MPQ static data; object, item, and monster names stay raw"
+        );
+        return None;
+    };
+
+    match GameData::load_classic_lod_install(&path) {
+        Ok(data) => {
+            info!(
+                path = %path.display(),
+                monsters = data.monster_count(),
+                objects = data.object_count(),
+                levels = data.level_count(),
+                items = data.item_count(),
+                "loaded Classic/LoD MPQ static data"
+            );
+            Some(Arc::new(data))
+        }
+        Err(error) => {
+            warn!(
+                path = %path.display(),
+                %error,
+                "failed to load Classic/LoD MPQ static data"
+            );
+            None
+        }
+    }
+}
+
+fn static_game_data_path() -> Option<PathBuf> {
+    for var in ["D2HELPER_D2_PATH", "LIBD2_D2_INSTALL"] {
+        if let Some(path) = std::env::var_os(var).map(PathBuf::from) {
+            if path_contains_legacy_mpqs(&path) {
+                return Some(path);
+            }
+            warn!(
+                var,
+                path = %path.display(),
+                "configured Diablo II path does not contain legacy MPQs"
+            );
+        }
+    }
+
+    let games = PathBuf::from(std::env::var_os("HOME")?).join("Games");
+    let entries = std::fs::read_dir(games).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with("Diablo II") && path_contains_legacy_mpqs(&path) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn path_contains_legacy_mpqs(path: &Path) -> bool {
+    path.join("patch_d2.mpq").exists() && path.join("d2data.mpq").exists()
 }
 
 fn log_capture_interfaces() {

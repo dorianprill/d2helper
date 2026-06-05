@@ -22,8 +22,12 @@ renders a compact automap-style view. It does not read or modify game memory.
       movement-verification bytes from decoded LoD packets
 - [x] Player-centered isometric automap debug renderer for revealed map cells
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
-- [x] Compact object/warp class-id labels with raw object state/portal metadata
-      where available
+- [x] Read-only Classic/LoD MPQ static-data loading through `libd2r`
+- [x] Monster, object, and item labels resolved from `MonStats.bin`,
+      `Objects.bin`, item `.bin` files, and language `.tbl` files when an
+      install path is available
+- [x] Compact object/warp labels with raw object state/portal metadata where
+      available
 - [x] Basic item marker colors for runes, uniques, sets, and other ground items
 - [x] Raw item-state flag highlighting from decoded item state packets
 - [ ] Generated static map background from seed/difficulty/act/area
@@ -42,10 +46,11 @@ renders a compact automap-style view. It does not read or modify game memory.
 - Native graphics/windowing dependencies required by `eframe`/`winit`
 - Packet-capture dependencies required by `libd2r`
 
-`d2helper` depends on the Git version of `libd2r`:
+Inside the `d2suite` checkout, `d2helper` depends on the sibling `libd2`
+checkout so both projects can be developed in lockstep:
 
 ```toml
-libd2r = { git = "https://github.com/dorianprill/libd2", branch = "main" }
+libd2r = { path = "../libd2" }
 ```
 
 ### Windows Notes
@@ -124,6 +129,18 @@ target\debug\d2helper.exe
 
 You can open the UI without Diablo II running. In that case, leave capture idle
 and use the window controls to inspect the shell.
+
+For MPQ-backed monster/object/item names, d2helper looks for a Classic/LoD
+install in this order:
+
+```text
+D2HELPER_D2_PATH
+LIBD2_D2_INSTALL
+~/Games/Diablo II*
+```
+
+The install directory is only read. It should contain legacy MPQs such as
+`patch_d2.mpq`, `d2data.mpq`, and usually `d2exp.mpq`.
 
 ## Logs
 

@@ -9,7 +9,9 @@ use std::collections::HashMap;
 
 use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
-use libd2r::{ConnectionEvent, Difficulty, GameState, ItemPlacement, ServerMessageParseError};
+use libd2r::{
+    ConnectionEvent, Difficulty, GameData, GameState, ItemPlacement, ServerMessageParseError,
+};
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
 pub type SharedOverlayState = std::sync::Arc<std::sync::RwLock<OverlaySnapshot>>;
@@ -50,7 +52,18 @@ impl OverlaySnapshot {
     /// Diablo II server packets update the world incrementally. A snapshot may
     /// therefore contain partial data early in a game, for example item records
     /// before the corresponding map area is revealed.
+    #[allow(dead_code)]
     pub fn from_game_state(game_state: &GameState, capture: CaptureSnapshot) -> Self {
+        Self::from_game_state_with_data(game_state, capture, None)
+    }
+
+    /// Copies the current game state and resolves known static ids when MPQ
+    /// data has been loaded from a Classic/LoD install.
+    pub fn from_game_state_with_data(
+        game_state: &GameState,
+        capture: CaptureSnapshot,
+        game_data: Option<&GameData>,
+    ) -> Self {
         let players = game_state
             .players()
             .iter()
@@ -83,6 +96,10 @@ impl OverlaySnapshot {
                 NpcSnapshot {
                     id: *id,
                     class_id: npc.class_id(),
+                    name: npc
+                        .class_id()
+                        .and_then(|class_id| game_data.and_then(|data| data.monster_name(class_id)))
+                        .map(str::to_owned),
                     life_percent: npc.life_percent(),
                     state: npc.state(),
                     x: location.x(),
@@ -99,6 +116,9 @@ impl OverlaySnapshot {
                 ObjectSnapshot {
                     id: *id,
                     class_id: object.class_id(),
+                    name: game_data
+                        .and_then(|data| data.object_name(object.class_id()))
+                        .map(str::to_owned),
                     object_type: object.object_type(),
                     state: object.state(),
                     portal_flags: object.portal_flags(),
@@ -118,13 +138,18 @@ impl OverlaySnapshot {
                     ItemPlacement::Ground { x, y } => Some((x, y)),
                     ItemPlacement::Container { .. } => None,
                 });
+                let code = packet_data
+                    .and_then(|data| data.code.as_ref())
+                    .map(|code| code.as_str().to_owned());
                 ItemSnapshot {
                     id: *id,
                     action: format!("{:?}", item.action_kind()),
                     category: format!("{:?}", item.category_kind()),
-                    code: packet_data
-                        .and_then(|data| data.code.as_ref())
-                        .map(|code| code.as_str().to_owned()),
+                    name: code
+                        .as_deref()
+                        .and_then(|code| game_data.and_then(|data| data.item_name(code)))
+                        .map(str::to_owned),
+                    code,
                     quality: packet_data
                         .and_then(|data| data.quality)
                         .map(|quality| format!("{:?}", quality)),
@@ -370,6 +395,7 @@ pub struct PlayerSnapshot {
 pub struct NpcSnapshot {
     pub id: u32,
     pub class_id: Option<u16>,
+    pub name: Option<String>,
     pub life_percent: Option<u8>,
     pub state: Option<u8>,
     pub x: u16,
@@ -381,6 +407,7 @@ pub struct NpcSnapshot {
 pub struct ObjectSnapshot {
     pub id: u32,
     pub class_id: u16,
+    pub name: Option<String>,
     pub object_type: u8,
     pub state: u32,
     pub portal_flags: Option<u8>,
@@ -395,6 +422,7 @@ pub struct ItemSnapshot {
     pub id: u32,
     pub action: String,
     pub category: String,
+    pub name: Option<String>,
     pub code: Option<String>,
     pub quality: Option<String>,
     pub state_flags: Option<ItemStateSnapshot>,
@@ -594,6 +622,7 @@ mod tests {
             id: 7,
             action: "Add".to_owned(),
             category: "Item".to_owned(),
+            name: Some("El Rune".to_owned()),
             code: Some("r01".to_owned()),
             quality: None,
             state_flags: None,
@@ -604,6 +633,7 @@ mod tests {
             id: 8,
             action: "Add".to_owned(),
             category: "Item".to_owned(),
+            name: None,
             code: None,
             quality: None,
             state_flags: None,
