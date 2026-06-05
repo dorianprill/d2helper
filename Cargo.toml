@@ -1,0 +1,21 @@
+[package]
+name = "d2helper"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Diablo II LoD game-state visualization overlay using libd2r and egui."
+
+[dependencies]
+eframe = { version = "0.32.3", default-features = false, features = [
+    "default_fonts",
+    "glow",
+] }
+libd2r = { git = "https://github.com/dorianprill/libd2", branch = "main" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.32.3", default-features = false, features = [
+    "wayland",
+    "x11",
+] }

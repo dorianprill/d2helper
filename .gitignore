@@ -1,0 +1,17 @@
+# Rust build output
+/target/
+
+# Local editor/project metadata
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local debug/capture artifacts
+*.log
+*.pcap
+*.pcapng
