@@ -39,7 +39,8 @@ egui app panels + automap renderer
 
 ## Modules
 
-- `main`: initializes tracing and creates the transparent native egui viewport.
+- `main`: truncates the current log file, initializes tracing, and creates the
+  transparent native egui viewport.
 - `capture`: owns the blocking packet-capture worker. The worker starts
   `libd2r::Client::start_with_events`, records packet counters, and publishes a
   fresh overlay snapshot after every event.
@@ -97,7 +98,8 @@ renderer a stable projection target.
 
 - No generated-map background from seed yet.
 - No generated-map borders, exits, or special-room outlines yet; only live
-  packet-observed revealed tiles and world objects are rendered.
+  packet-observed revealed tiles and world objects are rendered. Object/warp
+  markers show compact class-id labels until static object-name data is wired.
 - No collision or pathfinding visualization yet.
 - No MPQ/DS1/DT1 art ingestion yet.
 - Health and mana bars are placeholders until the relevant packet fields are

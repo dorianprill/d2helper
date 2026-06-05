@@ -21,6 +21,7 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] Placeholder health and mana bars
 - [x] Player-centered isometric automap debug renderer for revealed map cells
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
+- [x] Compact object/warp class-id labels for packet-observed entrances/objects
 - [x] Basic item marker colors for runes, uniques, sets, and other ground items
 - [ ] Generated static map background from seed/difficulty/act/area
 - [ ] Generated map borders, exits, and special rooms
@@ -129,6 +130,9 @@ D2helper writes tracing output to stderr and to:
 ```text
 logs/d2helper.log
 ```
+
+For now this file is truncated on every launch so fast capture iterations only
+show the current run.
 
 If `Start LoD capture` appears idle, check the toolbar status and this log file.
 Common causes are missing packet-capture permissions, a wrong selected network

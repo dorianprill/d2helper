@@ -183,11 +183,21 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
 fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for object in &snapshot.objects {
         let position = projector.project(object.x, object.y);
+        if !projector.rect.expand(32.0).contains(position) {
+            continue;
+        }
         painter.add(Shape::convex_polygon(
             diamond(position, 5.0, 5.0),
             Color32::from_rgb(180, 150, 255),
             Stroke::NONE,
         ));
+        painter.text(
+            position + Vec2::new(7.0, -8.0),
+            egui::Align2::LEFT_CENTER,
+            format!("W{}", object.class_id),
+            egui::FontId::monospace(9.0),
+            Color32::from_rgb(215, 200, 255),
+        );
 
         let _ = (object.id, object.class_id, object.object_type);
     }

@@ -50,6 +50,10 @@ Follow-up UI refinements:
   parse-error logging with packet id, expected/actual length, and packet bytes.
 - Updated the locked `libd2r` Git dependency to include live-capture direction
   filtering and packet-observed level-warp tracking.
+- Changed startup logging to truncate `logs/d2helper.log` on every launch while
+  capture iteration is still fast and noisy.
+- Added compact class-id labels to packet-observed object/warp markers so
+  entrance/object packets are visible before static object-name data exists.
 
 Challenges and decisions:
 
