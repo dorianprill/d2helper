@@ -121,7 +121,8 @@ impl eframe::App for D2HelperApp {
 
         egui::SidePanel::left("characters")
             .resizable(true)
-            .default_width(280.0)
+            .default_width(560.0)
+            .min_width(360.0)
             .frame(egui::Frame::NONE.fill(panel_fill))
             .show(context, |ui| {
                 draw_character_panel(ui, &snapshot);
@@ -156,22 +157,32 @@ fn draw_character_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySn
 
     for player in &snapshot.players {
         ui.group(|ui| {
+            ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 let label = if player.is_local {
                     format!("{}  local", player.name)
                 } else {
                     player.name.clone()
                 };
-                ui.label(RichText::new(label).strong());
+                let name_width = (ui.available_width() - 160.0).max(80.0);
+                ui.add_sized(
+                    [name_width, 20.0],
+                    egui::Label::new(RichText::new(label).strong()).truncate(),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_enabled(false, egui::Button::new("Inspect"));
                     ui.add_enabled(false, egui::Button::new("Download"));
                 });
             });
-            ui.label(format!(
-                "{} level {}  id {}  ({}, {})",
-                player.class_name, player.level, player.id, player.x, player.y
-            ));
+            ui.horizontal(|ui| {
+                ui.label(&player.class_name);
+                ui.separator();
+                ui.label(format!("level {}", player.level));
+                ui.separator();
+                ui.label(format!("id {}", player.id));
+                ui.separator();
+                ui.label(format!("@ {},{}", player.x, player.y));
+            });
             draw_resource_values(ui, player);
         });
         ui.add_space(4.0);

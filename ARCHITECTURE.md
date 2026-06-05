@@ -101,6 +101,18 @@ diamond cells and simple markers instead of MPQ/DT1 tile art. This makes it
 useful immediately for parser validation and gives the future generated-map
 renderer a stable projection target.
 
+Packet-observed `0x07 MapReveal` tile coordinates are not treated as exact unit
+coordinates. In current LoD captures they line up with unit/NPC coordinates
+after adding the legacy `4096` world-origin offset, so the debug renderer
+chooses the raw or shifted tile coordinate depending on which is nearer the
+current focus. This is a display normalization only; generated maps should later
+replace it with explicit area/room origins.
+
+The camera prefers the local player, but it ignores `(0,0)` non-local roster
+placeholders and falls back to live world-entity bounds when the local coordinate
+is clearly incoherent with packet-observed monsters, objects, items, or other
+known-position players.
+
 ## Current Limitations
 
 - No generated-map background from seed yet.
@@ -110,6 +122,9 @@ renderer a stable projection target.
 - No MPQ/DS1/DT1 art ingestion yet.
 - MPQ static data is used for labels only; no tile art or map asset data is
   loaded by d2helper yet.
+- Revealed-tile rendering currently uses a debug `4096` world-origin
+  normalization. This should be replaced by generated-map room origins once
+  native map generation/static map ingestion is available.
 - Resource bars display raw packet-unit values, not true percentages, until
   max-life/max-mana/max-stamina state is available.
 - Missile/projectile packets are not represented yet.

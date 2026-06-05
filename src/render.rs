@@ -11,6 +11,7 @@ use crate::snapshot::{MapFocus, OverlaySnapshot};
 
 const TILE_WIDTH: f32 = 22.0;
 const TILE_HEIGHT: f32 = 11.0;
+const AUTOMAP_TILE_WORLD_OFFSET: u16 = 4096;
 
 /// Draws the current map snapshot into the provided egui allocation.
 pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
@@ -92,25 +93,45 @@ mod tests {
             rect.center() + Vec2::new(-TILE_WIDTH * 0.5, TILE_HEIGHT * 0.5)
         );
     }
+
+    #[test]
+    fn revealed_tile_normalization_prefers_lod_world_offset_when_nearer_focus() {
+        assert_eq!(
+            normalize_revealed_tile(1100, 1000, 5200.0, 5100.0),
+            (5196, 5096)
+        );
+        assert_eq!(
+            normalize_revealed_tile(5200, 5100, 5200.0, 5100.0),
+            (5200, 5100)
+        );
+    }
 }
 
 fn draw_revealed_tiles(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for tile in &snapshot.game.revealed_tiles {
-        let center = projector.project(tile.x, tile.y);
+        let (x, y) =
+            normalize_revealed_tile(tile.x, tile.y, projector.center_x, projector.center_y);
+        let center = projector.project(x, y);
         if !projector.rect.expand(32.0).contains(center) {
             continue;
         }
         painter.add(Shape::convex_polygon(
-            diamond(center, TILE_WIDTH * 0.48, TILE_HEIGHT * 0.48),
-            Color32::from_rgba_unmultiplied(75, 95, 115, 54),
-            Stroke::new(0.6, Color32::from_rgba_unmultiplied(120, 155, 180, 90)),
+            diamond(center, TILE_WIDTH * 0.72, TILE_HEIGHT * 0.72),
+            Color32::from_rgba_unmultiplied(75, 115, 145, 96),
+            Stroke::new(0.8, Color32::from_rgba_unmultiplied(145, 190, 220, 150)),
         ));
     }
 }
 
 fn draw_players(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for player in &snapshot.players {
+        if !player.is_local && player.x == 0 && player.y == 0 {
+            continue;
+        }
         let position = projector.project(player.x, player.y);
+        if !projector.rect.expand(64.0).contains(position) {
+            continue;
+        }
         let color = if player.is_local {
             Color32::from_rgb(80, 220, 255)
         } else {
@@ -125,6 +146,25 @@ fn draw_players(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
             Color32::from_gray(230),
         );
     }
+}
+
+fn normalize_revealed_tile(tile_x: u16, tile_y: u16, center_x: f32, center_y: f32) -> (u16, u16) {
+    let shifted_x = tile_x.saturating_add(AUTOMAP_TILE_WORLD_OFFSET);
+    let shifted_y = tile_y.saturating_add(AUTOMAP_TILE_WORLD_OFFSET);
+    let raw_distance = projected_distance(tile_x, tile_y, center_x, center_y);
+    let shifted_distance = projected_distance(shifted_x, shifted_y, center_x, center_y);
+
+    if shifted_distance < raw_distance {
+        (shifted_x, shifted_y)
+    } else {
+        (tile_x, tile_y)
+    }
+}
+
+fn projected_distance(x: u16, y: u16, center_x: f32, center_y: f32) -> f32 {
+    let dx = x as f32 - center_x;
+    let dy = y as f32 - center_y;
+    (dx - dy).abs() + (dx + dy).abs()
 }
 
 fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {

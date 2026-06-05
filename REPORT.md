@@ -69,6 +69,14 @@ Follow-up UI refinements:
   `~/Games/Diablo II*` fallback.
 - Added MPQ-backed monster, object, and item labels to snapshots and the
   automap renderer, while preserving raw class/code labels as fallbacks.
+- Doubled the default character-panel width, made player rows reserve space for
+  disabled action buttons, and kept class/level/id/position metadata on a single
+  row for normal overlay widths.
+- Fixed the debug automap hiding parsed world data by ignoring `(0,0)` remote
+  roster placeholders, falling back from incoherent local-player coordinates to
+  live world-entity bounds, and normalizing LoD `0x07 MapReveal` tile origins
+  with the temporary `4096` world-coordinate offset when that is closer to the
+  current focus.
 
 Challenges and decisions:
 
@@ -80,6 +88,10 @@ Challenges and decisions:
 - The map view intentionally starts with abstract diamond cells rather than game
   tile art. This makes live parser validation possible before MPQ/static-map
   integration.
+- `0x07 MapReveal` packets use tile-origin coordinates, while monster/player
+  packets use unit-world coordinates. The renderer currently applies a
+  nearest-focus `4096` offset normalization for visible debug output; generated
+  map origins should replace this heuristic later.
 
 Known gaps:
 
@@ -111,4 +123,4 @@ RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 git diff --check
 ```
 
-Result: passed. 5 tests.
+Result: passed. 7 tests.

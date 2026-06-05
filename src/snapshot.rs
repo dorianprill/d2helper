@@ -175,7 +175,9 @@ impl OverlaySnapshot {
         let mut bounds = MapBounds::default();
 
         for player in &self.players {
-            bounds.add(player.x, player.y);
+            if player.has_known_world_position() {
+                bounds.add(player.x, player.y);
+            }
         }
         for npc in &self.npcs {
             bounds.add(npc.x, npc.y);
@@ -198,10 +200,29 @@ impl OverlaySnapshot {
     /// Returns the preferred automap focus point.
     ///
     /// Diablo II's automap is player-centered. Prefer the local player when the
-    /// server has identified it; fall back to any known player and finally to
-    /// the center of known map/entity bounds during early loading.
+    /// server has identified it and its coordinates are coherent with nearby
+    /// packet-observed world entities. During early loading, some non-local
+    /// players exist only as roster entries at `(0,0)`, and local resource
+    /// packets can briefly disagree with monster/object assignment coordinates.
+    /// In those cases, use live world-entity bounds so visible packets do not
+    /// disappear offscreen.
     pub fn map_focus(&self) -> Option<MapFocus> {
         if let Some(player) = self.players.iter().find(|player| player.is_local) {
+            if self.local_focus_is_coherent(player) {
+                return Some(MapFocus {
+                    x: player.x,
+                    y: player.y,
+                    source: MapFocusSource::LocalPlayer,
+                });
+            }
+            if let Some(bounds) = self.world_entity_bounds() {
+                let (x, y) = bounds.center();
+                return Some(MapFocus {
+                    x: x.round() as u16,
+                    y: y.round() as u16,
+                    source: MapFocusSource::KnownBounds,
+                });
+            }
             return Some(MapFocus {
                 x: player.x,
                 y: player.y,
@@ -209,7 +230,11 @@ impl OverlaySnapshot {
             });
         }
 
-        if let Some(player) = self.players.first() {
+        if let Some(player) = self
+            .players
+            .iter()
+            .find(|player| player.has_known_world_position())
+        {
             return Some(MapFocus {
                 x: player.x,
                 y: player.y,
@@ -225,6 +250,39 @@ impl OverlaySnapshot {
                 source: MapFocusSource::KnownBounds,
             }
         })
+    }
+
+    fn local_focus_is_coherent(&self, local: &PlayerSnapshot) -> bool {
+        let Some(bounds) = self.world_entity_bounds() else {
+            return true;
+        };
+        bounds.contains_with_margin(local.x, local.y, 240)
+            || self.players.iter().any(|player| {
+                !player.is_local
+                    && player.has_known_world_position()
+                    && player.distance_to(local.x, local.y) <= 240
+            })
+    }
+
+    fn world_entity_bounds(&self) -> Option<MapBounds> {
+        let mut bounds = MapBounds::default();
+        for player in &self.players {
+            if !player.is_local && player.has_known_world_position() {
+                bounds.add(player.x, player.y);
+            }
+        }
+        for npc in &self.npcs {
+            bounds.add(npc.x, npc.y);
+        }
+        for object in &self.objects {
+            bounds.add(object.x, object.y);
+        }
+        for item in &self.items {
+            if let (Some(x), Some(y)) = (item.x, item.y) {
+                bounds.add(x, y);
+            }
+        }
+        bounds.into_option()
     }
 }
 
@@ -390,6 +448,16 @@ pub struct PlayerSnapshot {
     pub movement_dy: Option<u8>,
 }
 
+impl PlayerSnapshot {
+    fn has_known_world_position(&self) -> bool {
+        self.is_local || self.x != 0 || self.y != 0
+    }
+
+    fn distance_to(&self, x: u16, y: u16) -> u16 {
+        coordinate_distance(self.x, self.y, x, y)
+    }
+}
+
 /// Monster/NPC unit data needed by the map markers and counters.
 #[derive(Debug, Clone)]
 pub struct NpcSnapshot {
@@ -523,6 +591,17 @@ impl MapBounds {
             (self.min_y as f32 + self.max_y as f32) * 0.5,
         )
     }
+
+    fn contains_with_margin(self, x: u16, y: u16, margin: u16) -> bool {
+        x.saturating_add(margin) >= self.min_x
+            && x <= self.max_x.saturating_add(margin)
+            && y.saturating_add(margin) >= self.min_y
+            && y <= self.max_y.saturating_add(margin)
+    }
+}
+
+fn coordinate_distance(ax: u16, ay: u16, bx: u16, by: u16) -> u16 {
+    ax.abs_diff(bx).max(ay.abs_diff(by))
 }
 
 /// Replaces the shared snapshot if the lock is available.
@@ -687,6 +766,42 @@ mod tests {
         assert_eq!(
             (focus.x, focus.y, focus.source),
             (30, 40, MapFocusSource::LocalPlayer)
+        );
+    }
+
+    #[test]
+    fn map_focus_uses_world_entities_when_local_position_is_incoherent() {
+        let mut snapshot = OverlaySnapshot::default();
+        snapshot.players.push(PlayerSnapshot {
+            id: 2,
+            name: "Local".to_owned(),
+            class_name: "Paladin".to_owned(),
+            level: 1,
+            x: 0,
+            y: 0,
+            is_local: true,
+            life: None,
+            mana: None,
+            stamina: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
+        });
+        snapshot.npcs.push(NpcSnapshot {
+            id: 10,
+            class_id: Some(19),
+            name: Some("Fallen".to_owned()),
+            life_percent: Some(100),
+            state: None,
+            x: 5200,
+            y: 5100,
+        });
+
+        let focus = snapshot.map_focus().expect("focus");
+        assert_eq!(
+            (focus.x, focus.y, focus.source),
+            (5200, 5100, MapFocusSource::KnownBounds)
         );
     }
 }
