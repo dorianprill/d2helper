@@ -105,6 +105,22 @@ Run the debug overlay:
 cargo run
 ```
 
+Or use the helper script, which builds, applies Linux packet-capture
+capabilities when available, detects a local Classic/LoD install for MPQ-backed
+labels, and launches the binary:
+
+```text
+./run-d2helper.sh
+```
+
+Useful variants:
+
+```text
+./run-d2helper.sh --build-only
+./run-d2helper.sh --release
+./run-d2helper.sh --skip-setcap
+```
+
 The debug executable is written to:
 
 ```text
