@@ -97,6 +97,11 @@ Follow-up UI refinements:
   until they have a current world position.
 - Adjusted local-player marker/focus logic so non-zero local coordinates remain
   renderable even if the world-location flag has not refreshed yet.
+- Increased the egui repaint cadence from roughly 10 FPS to roughly 30 FPS for
+  smoother automap updates.
+- Removed the stamina display from player rows and changed HP/MP bars to use
+  decoded max-life/max-mana stats, including Diablo fixed-point normalization
+  when live packet values are in 1/256 units.
 
 Challenges and decisions:
 
@@ -125,8 +130,8 @@ Known gaps:
   externally generated JSON.
 - No pathfinding overlay yet.
 - No MPQ-backed tile art or DS1/DT1 map asset rendering.
-- Resource bars display raw packet-unit values until libd2r exposes the
-  corresponding max resource values.
+- HP/MP bars remain unfilled until max-life/max-mana stats are available in the
+  decoded player state.
 - Missile/projectile markers are not implemented.
 - Capture can be paused from the UI, but the raw capture worker is not
   terminated until process exit.
@@ -152,4 +157,4 @@ git diff --check
 cargo build --release
 ```
 
-Result: passed. 12 tests.
+Result: passed. 15 tests.

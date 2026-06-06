@@ -87,9 +87,9 @@ the same module boundary can switch to channel-delivered snapshots.
 - act, area id, map seed/id, automap id, difficulty, and mode flags
 - revealed automap cells from map-reveal packets
 - players with level, inferred current area when the player has a known world
-  position, raw HP/mana/stamina, regeneration counters, and movement
-  verification bytes when known; roster membership is separate from whether a
-  current world position should be rendered
+  position, HP/mana values, max-stat-based HP/MP bar inputs, regeneration
+  counters, and movement verification bytes when known; roster membership is
+  separate from whether a current world position should be rendered
 - NPCs, objects with raw object-state metadata, and items with raw item-state
   flags when known
 - optional MPQ-backed monster, object, and item names
@@ -145,8 +145,8 @@ packet-observed monsters, objects, items, or other known-position players.
 - Revealed-tile rendering currently uses a debug `4096` world-origin
   normalization. This should be replaced by generated-map room origins once
   native map generation/static map ingestion is available.
-- Resource bars display raw packet-unit values, not true percentages, until
-  max-life/max-mana/max-stamina state is available.
+- HP/MP bars require max-life/max-mana stats. They remain unfilled until those
+  stats are observed in the decoded state.
 - Missile/projectile packets are not represented yet.
 - The red/green capture toggle pauses or resumes snapshot publication. It does
   not terminate the underlying blocking raw-channel worker.

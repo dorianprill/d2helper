@@ -20,8 +20,8 @@ renders a compact automap-style view. It does not read or modify game memory.
       packet id, item-stat stream count, and entity counts
 - [x] Character list populated from decoded player packets, including level,
       current-position coordinates, and inferred current area where known
-- [x] Raw local-player HP/mana/stamina values, regeneration counters, and
-      movement-verification bytes from decoded LoD packets
+- [x] Local-player HP/mana values, max-stat-based HP/MP bars, regeneration
+      counters, and movement-verification bytes from decoded LoD packets
 - [x] Player-centered isometric automap debug renderer for revealed map cells,
       generated collision walls, and live markers
 - [x] Live markers for local/remote players, NPCs, objects, and ground items

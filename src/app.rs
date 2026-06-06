@@ -40,7 +40,7 @@ impl D2HelperApp {
 
 impl eframe::App for D2HelperApp {
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        context.request_repaint_after(Duration::from_millis(100));
+        context.request_repaint_after(Duration::from_millis(33));
 
         let snapshot = read_snapshot(&self.shared);
         let panel_fill = Color32::from_black_alpha(self.background_opacity);
@@ -238,10 +238,6 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
             Color32::from_rgb(90, 130, 240),
             format!("MP {}", raw_value_label(player.mana)),
         );
-        ui.colored_label(
-            Color32::from_rgb(230, 210, 105),
-            format!("ST {}", raw_value_label(player.stamina)),
-        );
         if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
             ui.label(format!("regen {life_regen}/{mana_regen}"));
         }
@@ -253,43 +249,62 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
     let width = ui.available_width();
     let height = 8.0;
     let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, height * 3.0 + 4.0), egui::Sense::hover());
-    draw_raw_resource_bar(
+        ui.allocate_exact_size(egui::vec2(width, height * 2.0 + 2.0), egui::Sense::hover());
+    draw_resource_bar(
         ui,
         egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
         player.life,
+        player.life_max,
         Color32::from_rgb(120, 30, 35),
     );
-    draw_raw_resource_bar(
+    draw_resource_bar(
         ui,
         egui::Rect::from_min_size(
             rect.min + egui::vec2(0.0, height + 2.0),
             egui::vec2(width, height),
         ),
         player.mana,
+        player.mana_max,
         Color32::from_rgb(35, 55, 135),
-    );
-    draw_raw_resource_bar(
-        ui,
-        egui::Rect::from_min_size(
-            rect.min + egui::vec2(0.0, (height + 2.0) * 2.0),
-            egui::vec2(width, height),
-        ),
-        player.stamina,
-        Color32::from_rgb(120, 105, 35),
     );
 }
 
-fn draw_raw_resource_bar(ui: &mut egui::Ui, rect: egui::Rect, value: Option<u16>, color: Color32) {
+fn draw_resource_bar(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    value: Option<u16>,
+    max_value: Option<u32>,
+    color: Color32,
+) {
     ui.painter()
         .rect_filled(rect, 2.0, Color32::from_rgba_unmultiplied(80, 80, 80, 80));
-    let Some(value) = value else {
+    let Some(fraction) = resource_bar_fraction(value, max_value) else {
         return;
     };
-    let fraction = (value as f32 / 0x7fff as f32).clamp(0.0, 1.0);
     let filled =
         egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
     ui.painter().rect_filled(filled, 2.0, color);
+}
+
+fn resource_bar_fraction(value: Option<u16>, max_value: Option<u32>) -> Option<f32> {
+    let value = value? as f32;
+    let max_value = normalized_resource_max(max_value?, value)?;
+    Some((value / max_value).clamp(0.0, 1.0))
+}
+
+fn normalized_resource_max(max_value: u32, current_value: f32) -> Option<f32> {
+    if max_value == 0 {
+        return None;
+    }
+
+    let raw_max = max_value as f32;
+    if current_value > raw_max {
+        let fixed_point_max = raw_max * 256.0;
+        if current_value <= fixed_point_max {
+            return Some(fixed_point_max);
+        }
+    }
+    Some(raw_max)
 }
 
 fn raw_value_label(value: Option<u16>) -> String {
@@ -383,4 +398,24 @@ fn draw_map_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot
     });
     ui.add_space(6.0);
     render_automap(ui, snapshot);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resource_fraction_uses_fixed_point_max_when_needed() {
+        assert_eq!(resource_bar_fraction(Some(1280), Some(10)), Some(0.5));
+    }
+
+    #[test]
+    fn resource_fraction_accepts_raw_packet_unit_max() {
+        assert_eq!(resource_bar_fraction(Some(1280), Some(2560)), Some(0.5));
+    }
+
+    #[test]
+    fn resource_fraction_is_unknown_without_maximum() {
+        assert_eq!(resource_bar_fraction(Some(1280), None), None);
+    }
 }
