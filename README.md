@@ -12,12 +12,14 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] Transparent native `egui` window
 - [x] Runtime controls for native frame on/off, maximize/restore, and close
 - [x] Background-only opacity slider, including fully transparent mode
-- [x] Passive LoD D2GS capture worker using `libd2r::Client`
+- [x] Auto-started passive LoD D2GS capture worker using `libd2r::Client`
+- [x] Red/green capture toggle for pausing or resuming UI snapshot updates
 - [x] UI-safe snapshot layer between the blocking capture thread and egui
 - [x] Capture counters and packet parse-error display
 - [x] Bottom status strip for difficulty, act, area, seed, automap id, mode flags,
       packet id, item-stat stream count, and entity counts
-- [x] Character list populated from decoded player packets
+- [x] Character list populated from decoded player packets, including level,
+      current-position coordinates, and inferred current area where known
 - [x] Raw local-player HP/mana/stamina values, regeneration counters, and
       movement-verification bytes from decoded LoD packets
 - [x] Player-centered isometric automap debug renderer for revealed map cells,
@@ -144,11 +146,13 @@ target\debug\d2helper.exe
 3. Use `Hide Bar` to switch to borderless overlay mode once positioned.
 4. Use `Max` or `Restore` if you want a maximized debug overlay.
 5. Adjust background opacity. Text and markers stay opaque.
-6. Start Diablo II LoD 1.14 and join a game.
-7. Click `Start LoD capture`.
+6. Start Diablo II LoD 1.14 and join a game. Capture starts automatically and
+   waits for D2GS traffic.
+7. Use the red/green capture button only if you want to pause or resume UI
+   snapshot updates.
 
-You can open the UI without Diablo II running. In that case, leave capture idle
-and use the window controls to inspect the shell.
+You can open the UI without Diablo II running. In that case, capture remains in
+the waiting state until a matching LoD game connection appears.
 
 For MPQ-backed monster/object/item names, d2helper looks for a Classic/LoD
 install in this order:
@@ -195,8 +199,8 @@ logs/d2helper.log
 For now this file is truncated on every launch so fast capture iterations only
 show the current run.
 
-If `Start LoD capture` appears idle, check the toolbar status and this log file.
-Common causes are missing packet-capture permissions, a wrong selected network
+If capture appears idle, check the toolbar status and this log file. Common
+causes are missing packet-capture permissions, a wrong selected network
 interface, or no matching LoD D2GS traffic on TCP port `4000`.
 
 On Linux the log includes `/proc/self/status` capability fields. `CapEff` must

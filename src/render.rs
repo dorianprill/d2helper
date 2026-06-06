@@ -211,7 +211,7 @@ fn draw_revealed_tiles(painter: &Painter, projector: &IsoProjector, snapshot: &O
 
 fn draw_players(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for player in &snapshot.players {
-        if !player.world_location_known {
+        if !player.has_known_world_position() {
             continue;
         }
         let position = projector.project(player.x, player.y);

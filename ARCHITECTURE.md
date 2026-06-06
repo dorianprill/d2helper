@@ -44,7 +44,9 @@ egui app panels + automap renderer
 
 - `main`: truncates the current log file, initializes tracing, and creates the
   transparent native egui viewport.
-- `capture`: owns the blocking packet-capture worker. The worker starts
+- `capture`: owns the blocking packet-capture worker. The app starts this
+  worker at launch; the toolbar toggle pauses or resumes UI snapshot
+  publication while the raw-channel listener remains alive. The worker starts
   `libd2r::Client::start_with_events`, records packet counters, and publishes a
   fresh overlay snapshot after every event. It also loads optional read-only
   Classic/LoD MPQ static data once at startup for name resolution and optional
@@ -84,7 +86,8 @@ the same module boundary can switch to channel-delivered snapshots.
 - capture counters and last parse error
 - act, area id, map seed/id, automap id, difficulty, and mode flags
 - revealed automap cells from map-reveal packets
-- players with raw HP/mana/stamina, regeneration counters, and movement
+- players with level, inferred current area when the player has a known world
+  position, raw HP/mana/stamina, regeneration counters, and movement
   verification bytes when known; roster membership is separate from whether a
   current world position should be rendered
 - NPCs, objects with raw object-state metadata, and items with raw item-state
@@ -124,10 +127,12 @@ chooses the raw or shifted tile coordinate depending on which is nearer the
 current focus. This is a display normalization only; generated maps should later
 replace it with explicit area/room origins.
 
-The camera prefers the local player, but it ignores `(0,0)` non-local roster
-placeholders and falls back to live world-entity bounds when the local coordinate
-is clearly incoherent with packet-observed monsters, objects, items, or other
-known-position players.
+The camera prefers the local player. It accepts non-zero local coordinates even
+when the world-location visibility flag is still catching up, because live LoD
+captures can report local movement/resource data before the area-load packet has
+completed. It ignores `(0,0)` non-local roster placeholders and falls back to
+live world-entity bounds when the local coordinate is clearly incoherent with
+packet-observed monsters, objects, items, or other known-position players.
 
 ## Current Limitations
 
@@ -143,8 +148,8 @@ known-position players.
 - Resource bars display raw packet-unit values, not true percentages, until
   max-life/max-mana/max-stamina state is available.
 - Missile/projectile packets are not represented yet.
-- Capture lifecycle is start-only; stopping/restarting capture will need a
-  controllable capture abstraction in `libd2r`.
+- The red/green capture toggle pauses or resumes snapshot publication. It does
+  not terminate the underlying blocking raw-channel worker.
 - Runtime decoration toggling depends on backend/window-manager support. egui
   exposes the command on all native platforms, but individual desktops may apply
   it slightly differently.

@@ -7,7 +7,10 @@
 use std::{
     any::Any,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
 };
 
@@ -24,17 +27,39 @@ use crate::snapshot::{
 /// Handle used by the UI thread to start the capture worker once.
 pub struct CaptureHandle {
     started: bool,
+    enabled: Arc<AtomicBool>,
 }
 
 impl CaptureHandle {
     /// Creates a capture handle in the idle state.
     pub fn new() -> Self {
-        Self { started: false }
+        Self {
+            started: false,
+            enabled: Arc::new(AtomicBool::new(true)),
+        }
     }
 
-    /// Returns whether the worker has already been started.
-    pub fn started(&self) -> bool {
-        self.started
+    /// Returns whether decoded traffic is currently published to the UI.
+    pub fn enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+    }
+
+    /// Toggles snapshot publication while leaving the blocking worker alive.
+    ///
+    /// `libd2r::Client` currently owns a blocking raw-channel listener. Keeping
+    /// that worker alive avoids platform-specific cancellation of a packet
+    /// capture channel and lets the UI resume on the next decoded D2GS event.
+    pub fn toggle_enabled(&self, shared: &SharedOverlayState) {
+        let enabled = !self.enabled();
+        self.enabled.store(enabled, Ordering::Relaxed);
+        if let Ok(mut guard) = shared.write() {
+            guard.capture.running = self.started && enabled;
+            guard.capture.status = if enabled {
+                "waiting for LoD D2GS traffic on TCP port 4000".to_owned()
+            } else {
+                "capture stopped".to_owned()
+            };
+        }
     }
 
     /// Spawns the blocking LoD packet-capture worker.
@@ -53,9 +78,10 @@ impl CaptureHandle {
             },
         );
 
+        let enabled = self.enabled.clone();
         thread::Builder::new()
             .name("d2helper-capture".to_owned())
-            .spawn(move || run_capture(shared))
+            .spawn(move || run_capture(shared, enabled))
             .expect("failed to spawn d2helper capture thread");
     }
 }
@@ -66,7 +92,7 @@ impl Default for CaptureHandle {
     }
 }
 
-fn run_capture(shared: SharedOverlayState) {
+fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
     info!("starting LoD D2GS capture worker");
     log_process_capabilities();
     log_capture_interfaces();
@@ -82,6 +108,10 @@ fn run_capture(shared: SharedOverlayState) {
         client.start_with_events(|event, game_state| {
             log_connection_event(&event);
             counters.record(&event);
+            if !enabled.load(Ordering::Relaxed) {
+                replace_capture(&worker_shared, counters.snapshot(false));
+                return;
+            }
             let generated_map = generated_maps.current_map(game_state);
             let snapshot = OverlaySnapshot::from_game_state_with_data_and_map(
                 game_state,

@@ -25,9 +25,12 @@ impl D2HelperApp {
     /// Creates the overlay with dark visuals and an empty snapshot.
     pub fn new(creation_context: &eframe::CreationContext<'_>) -> Self {
         creation_context.egui_ctx.set_visuals(egui::Visuals::dark());
+        let shared = empty_shared_state();
+        let mut capture = CaptureHandle::new();
+        capture.start(shared.clone());
         Self {
-            shared: empty_shared_state(),
-            capture: CaptureHandle::new(),
+            shared,
+            capture,
             background_opacity: 255,
             decorations_enabled: true,
             maximized: false,
@@ -49,14 +52,24 @@ impl eframe::App for D2HelperApp {
             .frame(egui::Frame::NONE.fill(panel_fill))
             .show(context, |ui| {
                 ui.horizontal(|ui| {
+                    let capture_enabled = self.capture.enabled();
+                    let (capture_label, capture_fill) = if capture_enabled {
+                        ("Capture started", Color32::from_rgb(25, 120, 55))
+                    } else {
+                        ("Capture stopped", Color32::from_rgb(140, 40, 35))
+                    };
                     if ui
-                        .add_enabled(
-                            !self.capture.started(),
-                            egui::Button::new("Start LoD capture"),
+                        .add(
+                            egui::Button::new(
+                                RichText::new(capture_label)
+                                    .strong()
+                                    .color(Color32::from_rgb(245, 245, 245)),
+                            )
+                            .fill(capture_fill),
                         )
                         .clicked()
                     {
-                        self.capture.start(self.shared.clone());
+                        self.capture.toggle_enabled(&self.shared);
                     }
 
                     ui.separator();
@@ -177,15 +190,41 @@ fn draw_character_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySn
             ui.horizontal(|ui| {
                 ui.label(&player.class_name);
                 ui.separator();
-                ui.label(format!("level {}", player.level));
+                ui.label(level_label(player.level));
+                ui.separator();
+                ui.label(area_label(player));
                 ui.separator();
                 ui.label(format!("id {}", player.id));
                 ui.separator();
-                ui.label(format!("@ {},{}", player.x, player.y));
+                ui.label(position_label(player));
             });
             draw_resource_values(ui, player);
         });
         ui.add_space(4.0);
+    }
+}
+
+fn level_label(level: u32) -> String {
+    if level == 0 {
+        "level --".to_owned()
+    } else {
+        format!("level {level}")
+    }
+}
+
+fn area_label(player: &crate::snapshot::PlayerSnapshot) -> String {
+    player
+        .area_name
+        .as_deref()
+        .map(|name| format!("area {name}"))
+        .unwrap_or_else(|| "area --".to_owned())
+}
+
+fn position_label(player: &crate::snapshot::PlayerSnapshot) -> String {
+    if player.has_known_world_position() {
+        format!("@ {},{}", player.x, player.y)
+    } else {
+        "@ --".to_owned()
     }
 }
 

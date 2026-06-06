@@ -88,6 +88,15 @@ Follow-up UI refinements:
   `D2HELPER_MAP_JSON_DIR`, keyed by current seed, difficulty, and area.
 - Added generated collision-wall rendering and generated exit labels when
   `@diablo2/map`-compatible JSON is available.
+- Changed capture to start automatically when the app launches. The toolbar now
+  shows a red/green capture toggle that pauses or resumes UI snapshot
+  publication while the blocking capture worker remains alive.
+- Added player level and inferred current-area display to the character panel.
+  Area names come from MPQ `Levels.bin` data when available, otherwise from the
+  built-in `Area` enum; remote roster-only players still show an unknown area
+  until they have a current world position.
+- Adjusted local-player marker/focus logic so non-zero local coordinates remain
+  renderable even if the world-location flag has not refreshed yet.
 
 Challenges and decisions:
 
@@ -106,6 +115,9 @@ Challenges and decisions:
 - Full wall/collision data is not present in the live packet stream. The first
   wall layer therefore consumes generated-map JSON from the reverse-engineered
   map generator contract until native Rust generation is available.
+- The capture toggle does not stop the raw packet-capture worker; it only pauses
+  snapshot publication. A true stop/restart requires a cancellable capture
+  abstraction below `libd2r::Client`.
 
 Known gaps:
 
@@ -116,7 +128,8 @@ Known gaps:
 - Resource bars display raw packet-unit values until libd2r exposes the
   corresponding max resource values.
 - Missile/projectile markers are not implemented.
-- Capture can be started but not stopped from the UI.
+- Capture can be paused from the UI, but the raw capture worker is not
+  terminated until process exit.
 
 Next steps:
 
@@ -136,6 +149,7 @@ cargo fmt --check
 cargo test
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 git diff --check
+cargo build --release
 ```
 
-Result: passed. 9 tests.
+Result: passed. 12 tests.

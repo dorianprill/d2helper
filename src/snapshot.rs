@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::Arc};
 use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
 use libd2r::{
-    ConnectionEvent, Difficulty, GameData, GameState, GeneratedMap, ItemPlacement,
+    Area, ConnectionEvent, Difficulty, GameData, GameState, GeneratedMap, ItemPlacement,
     ServerMessageParseError,
 };
 
@@ -79,11 +79,17 @@ impl OverlaySnapshot {
         game_data: Option<&GameData>,
         generated_map: Option<Arc<GeneratedMap>>,
     ) -> Self {
+        let current_area_name = game_state
+            .map()
+            .area_id
+            .map(|area_id| display_area_name(area_id, game_data));
+
         let players = game_state
             .players()
             .iter()
             .map(|(id, player)| {
                 let location = player.location();
+                let is_local = game_state.local_player_id() == Some(*id);
                 PlayerSnapshot {
                     id: *id,
                     name: player.name().to_owned(),
@@ -91,8 +97,13 @@ impl OverlaySnapshot {
                     level: player.level(),
                     x: location.x(),
                     y: location.y(),
+                    area_name: if is_local || player.world_location_known() {
+                        current_area_name.clone()
+                    } else {
+                        None
+                    },
                     world_location_known: player.world_location_known(),
-                    is_local: game_state.local_player_id() == Some(*id),
+                    is_local,
                     life: player.vitals().and_then(|vitals| vitals.life()),
                     mana: player.vitals().and_then(|vitals| vitals.mana()),
                     stamina: player.vitals().and_then(|vitals| vitals.stamina()),
@@ -455,6 +466,7 @@ pub struct PlayerSnapshot {
     pub level: u32,
     pub x: u16,
     pub y: u16,
+    pub area_name: Option<String>,
     pub world_location_known: bool,
     pub is_local: bool,
     pub life: Option<u16>,
@@ -467,8 +479,14 @@ pub struct PlayerSnapshot {
 }
 
 impl PlayerSnapshot {
-    fn has_known_world_position(&self) -> bool {
-        self.world_location_known
+    /// Returns whether this player has coordinates that should be projected.
+    ///
+    /// D2GS can report the local player's resource/position packet before the
+    /// map-area load packet finishes refreshing visibility state. Treating a
+    /// non-zero local coordinate as renderable keeps the automap centered on the
+    /// player through that packet ordering.
+    pub fn has_known_world_position(&self) -> bool {
+        self.world_location_known || (self.is_local && (self.x != 0 || self.y != 0))
     }
 
     fn distance_to(&self, x: u16, y: u16) -> u16 {
@@ -666,6 +684,15 @@ fn difficulty_label(difficulty: Difficulty) -> &'static str {
     }
 }
 
+fn display_area_name(area_id: u16, game_data: Option<&GameData>) -> String {
+    game_data
+        .and_then(|data| data.level_name(area_id))
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| Area::from_id(area_id).map(|area| area.to_string()))
+        .unwrap_or_else(|| format!("area {area_id}"))
+}
+
 fn parse_error_label(error: &ServerMessageParseError) -> String {
     match error {
         ServerMessageParseError::EmptyPacket => "empty packet".to_owned(),
@@ -754,6 +781,7 @@ mod tests {
             level: 1,
             x: 10,
             y: 20,
+            area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: false,
             life: None,
@@ -771,6 +799,7 @@ mod tests {
             level: 1,
             x: 30,
             y: 40,
+            area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
             life: Some(1000),
@@ -799,6 +828,7 @@ mod tests {
             level: 1,
             x: 0,
             y: 0,
+            area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
             life: None,
@@ -824,5 +854,59 @@ mod tests {
             (focus.x, focus.y, focus.source),
             (5200, 5100, MapFocusSource::KnownBounds)
         );
+    }
+
+    #[test]
+    fn nonzero_local_position_is_renderable_before_visibility_refresh() {
+        let player = PlayerSnapshot {
+            id: 2,
+            name: "Local".to_owned(),
+            class_name: "Paladin".to_owned(),
+            level: 1,
+            x: 5118,
+            y: 5168,
+            area_name: Some("Blood Moor".to_owned()),
+            world_location_known: false,
+            is_local: true,
+            life: None,
+            mana: None,
+            stamina: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
+        };
+
+        assert!(player.has_known_world_position());
+    }
+
+    #[test]
+    fn remote_roster_placeholder_is_not_renderable() {
+        let player = PlayerSnapshot {
+            id: 2,
+            name: "Remote".to_owned(),
+            class_name: "Amazon".to_owned(),
+            level: 1,
+            x: 0,
+            y: 0,
+            area_name: None,
+            world_location_known: false,
+            is_local: false,
+            life: None,
+            mana: None,
+            stamina: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
+        };
+
+        assert!(!player.has_known_world_position());
+    }
+
+    #[test]
+    fn area_name_falls_back_to_builtin_area_enum() {
+        assert_eq!(display_area_name(2, None), "Blood Moor");
+        assert_eq!(display_area_name(999, None), "area 999");
     }
 }

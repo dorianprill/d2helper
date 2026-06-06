@@ -1,8 +1,8 @@
 //! D2helper overlay entry point.
 //!
-//! The binary creates a transparent egui window and starts with an idle capture
-//! worker. Packet capture begins from the toolbar so the UI can be opened before
-//! Diablo II has joined a game.
+//! The binary creates a transparent egui window and starts the LoD capture
+//! worker immediately. The toolbar can pause or resume snapshot publication
+//! while the blocking packet-capture thread keeps waiting for D2GS traffic.
 
 mod app;
 mod capture;
