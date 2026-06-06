@@ -88,10 +88,11 @@ impl eframe::App for D2HelperApp {
                     ui.add(egui::Slider::new(&mut self.background_opacity, 0..=255));
                     ui.separator();
                     ui.label(format!(
-                        "events {} applied {} errors {}",
+                        "events {} applied {} errors {} tcp {}",
                         snapshot.capture.total_events,
                         snapshot.capture.applied_messages,
-                        snapshot.capture.parse_errors
+                        snapshot.capture.parse_errors,
+                        snapshot.capture.transport_warnings
                     ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui

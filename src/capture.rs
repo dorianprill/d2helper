@@ -14,7 +14,9 @@ use std::{
     thread,
 };
 
-use libd2r::{Client, ConnectionEvent, GameData, ServerMessageParseError};
+use libd2r::{
+    Client, ConnectionEvent, ConnectionTransportWarning, GameData, ServerMessageParseError,
+};
 use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
@@ -167,6 +169,80 @@ fn log_connection_event(event: &ConnectionEvent) {
                 warn!("empty D2GS server packet");
             }
         },
+        ConnectionEvent::TransportWarning { warning } => log_transport_warning(warning),
+    }
+}
+
+fn log_transport_warning(warning: &ConnectionTransportWarning) {
+    match warning {
+        ConnectionTransportWarning::DuplicateTcpSegment {
+            sequence,
+            len,
+            expected_sequence,
+        } => {
+            info!(
+                sequence,
+                len, expected_sequence, "ignored duplicate D2GS TCP segment"
+            );
+        }
+        ConnectionTransportWarning::OverlappingTcpSegment {
+            sequence,
+            skipped,
+            emitted,
+            expected_sequence,
+        } => {
+            info!(
+                sequence,
+                skipped, emitted, expected_sequence, "trimmed overlapping D2GS TCP segment"
+            );
+        }
+        ConnectionTransportWarning::OutOfOrderTcpSegment {
+            sequence,
+            len,
+            expected_sequence,
+            buffered_segments,
+            buffered_bytes,
+        } => {
+            warn!(
+                sequence,
+                len,
+                expected_sequence,
+                buffered_segments,
+                buffered_bytes,
+                "buffered out-of-order D2GS TCP segment"
+            );
+        }
+        ConnectionTransportWarning::BufferedTcpSegmentReleased { sequence, len } => {
+            info!(
+                sequence,
+                len, "released buffered D2GS TCP segment after gap filled"
+            );
+        }
+        ConnectionTransportWarning::TcpGapReset {
+            sequence,
+            len,
+            expected_sequence,
+            buffered_segments,
+            buffered_bytes,
+        } => {
+            warn!(
+                sequence,
+                len,
+                expected_sequence,
+                buffered_segments,
+                buffered_bytes,
+                "reset D2GS reader after missing TCP gap exceeded buffer limit"
+            );
+        }
+        ConnectionTransportWarning::BufferedD2gsPayload {
+            payload_len,
+            buffered_len,
+        } => {
+            info!(
+                payload_len,
+                buffered_len, "buffered partial D2GS payload waiting for more TCP bytes"
+            );
+        }
     }
 }
 

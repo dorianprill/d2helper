@@ -10,8 +10,8 @@ use std::{collections::HashMap, sync::Arc};
 use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
 use libd2r::{
-    Area, ConnectionEvent, Difficulty, GameData, GameState, GeneratedMap, ItemPlacement,
-    ServerMessageParseError, UnitStat,
+    Area, ConnectionEvent, ConnectionTransportWarning, Difficulty, GameData, GameState,
+    GeneratedMap, ItemPlacement, ServerMessageParseError, UnitStat,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
@@ -323,6 +323,7 @@ pub struct CaptureSnapshot {
     pub total_events: u64,
     pub applied_messages: u64,
     pub parse_errors: u64,
+    pub transport_warnings: u64,
     pub last_packet_id: Option<u8>,
     pub last_error: Option<String>,
 }
@@ -364,6 +365,7 @@ pub struct CaptureCounters {
     pub total_events: u64,
     pub applied_messages: u64,
     pub parse_errors: u64,
+    pub transport_warnings: u64,
     pub last_packet_id: Option<u8>,
     pub last_error: Option<String>,
 }
@@ -372,7 +374,9 @@ impl CaptureCounters {
     /// Records a decoded packet event.
     pub fn record(&mut self, event: &ConnectionEvent) {
         self.total_events += 1;
-        self.last_packet_id = Some(event.packet_id());
+        if let Some(packet_id) = event.packet_id() {
+            self.last_packet_id = Some(packet_id);
+        }
         match event {
             ConnectionEvent::ServerMessage { applied, .. } => {
                 if *applied {
@@ -383,6 +387,10 @@ impl CaptureCounters {
             ConnectionEvent::ParseError { error, .. } => {
                 self.parse_errors += 1;
                 self.last_error = Some(parse_error_label(error));
+            }
+            ConnectionEvent::TransportWarning { warning } => {
+                self.transport_warnings += 1;
+                self.last_error = Some(transport_warning_label(warning));
             }
         }
     }
@@ -399,6 +407,7 @@ impl CaptureCounters {
             total_events: self.total_events,
             applied_messages: self.applied_messages,
             parse_errors: self.parse_errors,
+            transport_warnings: self.transport_warnings,
             last_packet_id: self.last_packet_id,
             last_error: self.last_error.clone(),
         }
@@ -709,6 +718,27 @@ fn parse_error_label(error: &ServerMessageParseError) -> String {
     }
 }
 
+fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
+    match warning {
+        ConnectionTransportWarning::DuplicateTcpSegment { .. } => {
+            "duplicate TCP segment ignored".to_owned()
+        }
+        ConnectionTransportWarning::OverlappingTcpSegment { .. } => {
+            "overlapping TCP segment trimmed".to_owned()
+        }
+        ConnectionTransportWarning::OutOfOrderTcpSegment { .. } => {
+            "out-of-order TCP segment buffered".to_owned()
+        }
+        ConnectionTransportWarning::BufferedTcpSegmentReleased { .. } => {
+            "buffered TCP segment released".to_owned()
+        }
+        ConnectionTransportWarning::TcpGapReset { .. } => "TCP gap reset D2GS reader".to_owned(),
+        ConnectionTransportWarning::BufferedD2gsPayload { .. } => {
+            "partial D2GS payload buffered".to_owned()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,6 +764,37 @@ mod tests {
         ];
 
         assert_eq!(count_by_area(&tiles), vec![(1, 1), (3, 2)]);
+    }
+
+    #[test]
+    fn capture_counters_track_transport_warnings_without_packet_id_churn() {
+        let mut counters = CaptureCounters::default();
+
+        counters.record(&ConnectionEvent::ServerMessage {
+            packet: libd2r::D2GSPacket { data: vec![0x00] },
+            message: libd2r::ServerMessage::GameLoading,
+            applied: true,
+        });
+        counters.record(&ConnectionEvent::TransportWarning {
+            warning: ConnectionTransportWarning::OutOfOrderTcpSegment {
+                sequence: 200,
+                len: 6,
+                expected_sequence: 100,
+                buffered_segments: 1,
+                buffered_bytes: 6,
+            },
+        });
+
+        let snapshot = counters.snapshot(true);
+        assert_eq!(snapshot.total_events, 2);
+        assert_eq!(snapshot.applied_messages, 1);
+        assert_eq!(snapshot.parse_errors, 0);
+        assert_eq!(snapshot.transport_warnings, 1);
+        assert_eq!(snapshot.last_packet_id, Some(0x00));
+        assert_eq!(
+            snapshot.last_error.as_deref(),
+            Some("out-of-order TCP segment buffered")
+        );
     }
 
     #[test]
