@@ -11,7 +11,7 @@ use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
 use libd2r::{
     Area, ConnectionEvent, ConnectionTransportWarning, Difficulty, GameData, GameState,
-    GeneratedMap, ItemPlacement, ServerMessageParseError, UnitStat,
+    GeneratedMap, ItemPlacement, Player, ServerMessageParseError, UnitStat,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
@@ -84,7 +84,7 @@ impl OverlaySnapshot {
             .area_id
             .map(|area_id| display_area_name(area_id, game_data));
 
-        let players = game_state
+        let mut players: Vec<_> = game_state
             .players()
             .iter()
             .map(|(id, player)| {
@@ -104,9 +104,9 @@ impl OverlaySnapshot {
                     },
                     world_location_known: player.world_location_known(),
                     is_local,
-                    life: player.vitals().and_then(|vitals| vitals.life()),
+                    life: player_life_value(player),
                     life_max: player.stat(UnitStat::LifeMax as u16),
-                    mana: player.vitals().and_then(|vitals| vitals.mana()),
+                    mana: player_mana_value(player),
                     mana_max: player.stat(UnitStat::ManaMax as u16),
                     life_regen: player.vitals().and_then(|vitals| vitals.life_regen()),
                     mana_regen: player.vitals().and_then(|vitals| vitals.mana_regen()),
@@ -115,6 +115,7 @@ impl OverlaySnapshot {
                 }
             })
             .collect();
+        sort_player_snapshots(&mut players);
 
         let npcs = game_state
             .npcs()
@@ -479,9 +480,20 @@ pub struct PlayerSnapshot {
     pub area_name: Option<String>,
     pub world_location_known: bool,
     pub is_local: bool,
-    pub life: Option<u16>,
+    /// Current life in raw Diablo II packet/stat units.
+    ///
+    /// The local player usually gets this from `0x18`/`0x95` resource packets.
+    /// Remote players often only expose it as `UnitStat::Life` through the
+    /// stat-update stream seen during join and party synchronization.
+    pub life: Option<u32>,
+    /// Maximum life from `UnitStat::LifeMax`.
     pub life_max: Option<u32>,
-    pub mana: Option<u16>,
+    /// Current mana in raw Diablo II packet/stat units.
+    ///
+    /// As with life, local-player resource packets and remote-player stat
+    /// updates use different D2GS paths.
+    pub mana: Option<u32>,
+    /// Maximum mana from `UnitStat::ManaMax`.
     pub mana_max: Option<u32>,
     pub life_regen: Option<u8>,
     pub mana_regen: Option<u8>,
@@ -704,6 +716,30 @@ fn display_area_name(area_id: u16, game_data: Option<&GameData>) -> String {
         .unwrap_or_else(|| format!("area {area_id}"))
 }
 
+fn sort_player_snapshots(players: &mut [PlayerSnapshot]) {
+    players.sort_by(|left, right| {
+        right
+            .is_local
+            .cmp(&left.is_local)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+}
+
+fn player_life_value(player: &Player) -> Option<u32> {
+    player
+        .vitals()
+        .and_then(|vitals| vitals.life().map(u32::from))
+        .or_else(|| player.stat(UnitStat::Life as u16))
+}
+
+fn player_mana_value(player: &Player) -> Option<u32> {
+    player
+        .vitals()
+        .and_then(|vitals| vitals.mana().map(u32::from))
+        .or_else(|| player.stat(UnitStat::Mana as u16))
+}
+
 fn parse_error_label(error: &ServerMessageParseError) -> String {
     match error {
         ServerMessageParseError::EmptyPacket => "empty packet".to_owned(),
@@ -742,6 +778,7 @@ fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libd2r::core::update::Update;
 
     #[test]
     fn count_by_area_sorts_by_area_id() {
@@ -764,6 +801,60 @@ mod tests {
         ];
 
         assert_eq!(count_by_area(&tiles), vec![(1, 1), (3, 2)]);
+    }
+
+    #[test]
+    fn player_snapshots_sort_local_player_first() {
+        let mut players = vec![
+            player_snapshot(3, "Zed", false),
+            player_snapshot(2, "Self", true),
+            player_snapshot(1, "Ada", false),
+        ];
+
+        sort_player_snapshots(&mut players);
+
+        assert_eq!(
+            players.iter().map(|player| player.id).collect::<Vec<_>>(),
+            vec![2, 1, 3]
+        );
+    }
+
+    #[test]
+    fn remote_player_snapshot_uses_stat_life_and_mana_without_vitals() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2r::ServerMessage::PlayerJoined {
+            packet_length: 36,
+            player_id: 7,
+            character_class: 1,
+            character_name: name16("Remote"),
+            character_level: 42,
+            party_id: 0xffff,
+            unknown: [0; 8],
+        }));
+        for (attribute, amount) in [
+            (UnitStat::Life, 640),
+            (UnitStat::LifeMax, 1280),
+            (UnitStat::Mana, 320),
+            (UnitStat::ManaMax, 960),
+        ] {
+            assert!(state.update(libd2r::ServerMessage::AttributeUpdate {
+                unit_id: 7,
+                attribute: attribute as u8,
+                amount,
+            }));
+        }
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let player = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == 7)
+            .expect("remote player snapshot");
+
+        assert_eq!(player.life, Some(640));
+        assert_eq!(player.life_max, Some(1280));
+        assert_eq!(player.mana, Some(320));
+        assert_eq!(player.mana_max, Some(960));
     }
 
     #[test]
@@ -976,5 +1067,35 @@ mod tests {
     fn area_name_falls_back_to_builtin_area_enum() {
         assert_eq!(display_area_name(2, None), "Blood Moor");
         assert_eq!(display_area_name(999, None), "area 999");
+    }
+
+    fn player_snapshot(id: u32, name: &str, is_local: bool) -> PlayerSnapshot {
+        PlayerSnapshot {
+            id,
+            name: name.to_owned(),
+            class_name: "Paladin".to_owned(),
+            level: 1,
+            x: 0,
+            y: 0,
+            area_name: None,
+            world_location_known: false,
+            is_local,
+            life: None,
+            life_max: None,
+            mana: None,
+            mana_max: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
+        }
+    }
+
+    fn name16(name: &str) -> [u8; 16] {
+        let mut bytes = [0; 16];
+        let name = name.as_bytes();
+        let len = name.len().min(bytes.len());
+        bytes[..len].copy_from_slice(&name[..len]);
+        bytes
     }
 }

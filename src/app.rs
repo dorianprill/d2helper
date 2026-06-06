@@ -40,7 +40,7 @@ impl D2HelperApp {
 
 impl eframe::App for D2HelperApp {
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        context.request_repaint_after(Duration::from_millis(33));
+        context.request_repaint_after(Duration::from_millis(16));
 
         let snapshot = read_snapshot(&self.shared);
         let panel_fill = Color32::from_black_alpha(self.background_opacity);
@@ -178,11 +178,15 @@ fn draw_character_panel(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySn
                 } else {
                     player.name.clone()
                 };
+                let name_text = if player.is_local {
+                    RichText::new(label)
+                        .strong()
+                        .color(Color32::from_rgb(210, 112, 32))
+                } else {
+                    RichText::new(label).strong()
+                };
                 let name_width = (ui.available_width() - 160.0).max(80.0);
-                ui.add_sized(
-                    [name_width, 20.0],
-                    egui::Label::new(RichText::new(label).strong()).truncate(),
-                );
+                ui.add_sized([name_width, 20.0], egui::Label::new(name_text).truncate());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_enabled(false, egui::Button::new("Inspect"));
                     ui.add_enabled(false, egui::Button::new("Download"));
@@ -273,7 +277,7 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
 fn draw_resource_bar(
     ui: &mut egui::Ui,
     rect: egui::Rect,
-    value: Option<u16>,
+    value: Option<u32>,
     max_value: Option<u32>,
     color: Color32,
 ) {
@@ -287,7 +291,7 @@ fn draw_resource_bar(
     ui.painter().rect_filled(filled, 2.0, color);
 }
 
-fn resource_bar_fraction(value: Option<u16>, max_value: Option<u32>) -> Option<f32> {
+fn resource_bar_fraction(value: Option<u32>, max_value: Option<u32>) -> Option<f32> {
     let value = value? as f32;
     let max_value = normalized_resource_max(max_value?, value)?;
     Some((value / max_value).clamp(0.0, 1.0))
@@ -308,7 +312,7 @@ fn normalized_resource_max(max_value: u32, current_value: f32) -> Option<f32> {
     Some(raw_max)
 }
 
-fn raw_value_label(value: Option<u16>) -> String {
+fn raw_value_label(value: Option<u32>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "--".to_owned())
