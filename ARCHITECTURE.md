@@ -58,8 +58,11 @@ egui app panels + automap renderer
   It copies selected `GameState` values into cloneable UI structs so egui never
   depends on a live parser borrow. When `GameData` is available, monster,
   object, and item ids are resolved into display names during snapshot creation.
+  The same layer now also precomputes an exportable local-player legacy `.d2s`
+  payload when `libd2r` can synthesize one from the current `GameState`.
 - `app`: owns egui layout: toolbar, character list, bottom status strip, and map
-  section.
+  section. The local-player download action writes the precomputed `.d2s` into
+  the OS default Downloads folder with numeric suffix deconfliction.
 - `render`: draws the current snapshot as a simple automap-style isometric
   debug view.
 
@@ -95,6 +98,7 @@ the same module boundary can switch to channel-delivered snapshots.
 - optional MPQ-backed monster, object, and item names
 - optional generated-map collision and exit data for the current seed,
   difficulty, and area
+- optional local-player legacy `.d2s` bytes for the character download button
 - raw `0x3E` item-stat stream count
 
 Only ground items have map coordinates. Container/equipment items are kept out

@@ -243,6 +243,15 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
                 buffered_len, "buffered partial D2GS payload waiting for more TCP bytes"
             );
         }
+        ConnectionTransportWarning::D2gsFramingReset {
+            payload_len,
+            discarded_len,
+        } => {
+            warn!(
+                payload_len,
+                discarded_len, "reset D2GS packet framing after buffered payload exceeded limit"
+            );
+        }
     }
 }
 

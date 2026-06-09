@@ -38,13 +38,14 @@ renders a compact automap-style view. It does not read or modify game memory.
       `D2HELPER_MAP_JSON` or `D2HELPER_MAP_JSON_DIR`
 - [x] Generated collision wall rendering and generated exit markers when map
       JSON is available
+- [x] Local-player character download action using `libd2r` legacy `.d2s` export
 - [ ] Native generated static map background from seed/difficulty/act/area
 - [ ] Pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
 - [ ] Exact Diablo II window tracking/anchoring
 - [ ] Missile, spell, and projectile tracking
 - [ ] Item filtering rules and item inspection
-- [ ] Battle.net character download actions
+- [ ] Battle.net account/character listing and selection
 
 ## Build Requirements
 
@@ -151,6 +152,10 @@ target\debug\d2helper.exe
    waits for D2GS traffic.
 7. Use the red/green capture button only if you want to pause or resume UI
    snapshot updates.
+8. Once the local player has been identified and `libd2r` has enough data to
+   synthesize a save, click `Download` in the local player row. D2helper writes
+   the exported `.d2s` into the current user's default `Downloads` folder and
+   avoids overwriting by appending `-1`, `-2`, and so on when needed.
 
 You can open the UI without Diablo II running. In that case, capture remains in
 the waiting state until a matching LoD game connection appears.

@@ -102,6 +102,21 @@ Follow-up UI refinements:
 - Removed the stamina display from player rows and changed HP/MP bars to use
   decoded max-life/max-mana stats, including Diablo fixed-point normalization
   when live packet values are in 1/256 units.
+- Enabled the local-player `Download` button. D2helper now uses
+  `libd2r::CharacterFile::export_legacy_from_game_state` to precompute a legacy
+  `.d2s` payload from the live local-player `GameState` and writes it to the
+  platform default Downloads directory on click.
+- Added UI/log status for character-save exports and filename deconfliction so
+  repeated clicks create `Name.d2s`, `Name-1.d2s`, and so on instead of
+  overwriting the previous test export.
+- Added focused tests for export availability in the snapshot layer and for the
+  filename suffixing behavior used by the download action.
+- Added Downloads-directory resolution that prefers the platform-reported user
+  Downloads path and falls back to `<home>/Downloads` when the OS does not
+  expose one directly.
+- Added logging/snapshot surfacing for `libd2r`'s D2GS framing-resync warning so
+  live capture no longer appears permanently frozen when a poisoned buffered
+  payload forces the packet splitter to restart from a later TCP boundary.
 
 Challenges and decisions:
 
@@ -157,4 +172,4 @@ git diff --check
 cargo build --release
 ```
 
-Result: passed. 15 tests.
+Result: passed. 20 tests.

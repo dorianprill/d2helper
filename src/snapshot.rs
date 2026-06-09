@@ -10,8 +10,9 @@ use std::{collections::HashMap, sync::Arc};
 use libd2r::core::entity::Entity;
 use libd2r::core::game_state::MapTile;
 use libd2r::{
-    Area, ConnectionEvent, ConnectionTransportWarning, Difficulty, GameData, GameState,
-    GeneratedMap, ItemPlacement, Player, ServerMessageParseError, UnitStat,
+    Area, CharacterExportOptions, CharacterFile, ConnectionEvent, ConnectionTransportWarning,
+    Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, Player, ServerMessageParseError,
+    UnitStat,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
@@ -34,6 +35,9 @@ pub struct OverlaySnapshot {
     pub items: Vec<ItemSnapshot>,
     /// Generated static collision map for the current seed/difficulty/area.
     pub generated_map: Option<Arc<GeneratedMap>>,
+    /// Exportable local-player `.d2s` payload when the current game state is
+    /// rich enough for `libd2r`'s legacy save export.
+    pub character_export: Option<CharacterExportSnapshot>,
 }
 
 impl Default for OverlaySnapshot {
@@ -46,6 +50,7 @@ impl Default for OverlaySnapshot {
             objects: Vec::new(),
             items: Vec::new(),
             generated_map: None,
+            character_export: None,
         }
     }
 }
@@ -197,6 +202,7 @@ impl OverlaySnapshot {
             objects,
             items,
             generated_map,
+            character_export: CharacterExportSnapshot::from_game_state(game_state),
         }
     }
 
@@ -313,6 +319,31 @@ impl OverlaySnapshot {
             }
         }
         bounds.into_option()
+    }
+}
+
+/// Exportable local-player character-save payload for the UI download action.
+#[derive(Debug, Clone)]
+pub struct CharacterExportSnapshot {
+    pub file_name: String,
+    pub bytes: Arc<[u8]>,
+}
+
+impl CharacterExportSnapshot {
+    fn from_game_state(game_state: &GameState) -> Option<Self> {
+        let local_player = game_state
+            .local_player_id()
+            .and_then(|id| game_state.player(id))?;
+        let file = CharacterFile::export_legacy_from_game_state(
+            game_state,
+            CharacterExportOptions::from_game_state_skills(),
+        )
+        .ok()?;
+
+        Some(Self {
+            file_name: format!("{}.d2s", local_player.name()),
+            bytes: Arc::from(file.to_bytes()),
+        })
     }
 }
 
@@ -772,6 +803,9 @@ fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
         ConnectionTransportWarning::BufferedD2gsPayload { .. } => {
             "partial D2GS payload buffered".to_owned()
         }
+        ConnectionTransportWarning::D2gsFramingReset { .. } => {
+            "D2GS framing reset after desync".to_owned()
+        }
     }
 }
 
@@ -855,6 +889,30 @@ mod tests {
         assert_eq!(player.life_max, Some(1280));
         assert_eq!(player.mana, Some(320));
         assert_eq!(player.mana_max, Some(960));
+    }
+
+    #[test]
+    fn local_player_snapshot_exposes_character_export_when_state_is_exportable() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2r::ServerMessage::AssignPlayer {
+            unit_id: 7,
+            class: 3,
+            szname: name16("Saver"),
+            x: 123,
+            y: 456,
+        }));
+        assert!(state.update(libd2r::ServerMessage::GameHandshake {
+            unit_type: 0,
+            unit_id: 7,
+        }));
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let export = snapshot
+            .character_export
+            .expect("local player export should exist");
+
+        assert_eq!(export.file_name, "Saver.d2s");
+        assert!(!export.bytes.is_empty());
     }
 
     #[test]
