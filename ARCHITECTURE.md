@@ -93,8 +93,8 @@ the same module boundary can switch to channel-delivered snapshots.
   position, HP/mana values, max-stat-based HP/MP bar inputs, regeneration
   counters, and movement verification bytes when known; roster membership is
   separate from whether a current world position should be rendered
-- NPCs, objects with raw object-state metadata, and items with raw item-state
-  flags when known
+- NPCs, mercenaries, missiles/projectiles, objects with raw object-state
+  metadata, and items with raw item-state flags when known
 - optional MPQ-backed monster, object, and item names
 - optional generated-map collision and exit data for the current seed,
   difficulty, and area
@@ -116,7 +116,8 @@ screen_y = (world_x + world_y) * tile_height / 2
 The first renderer uses a fixed-scale, player-centered automap camera with
 diamond cells and simple markers instead of MPQ/DT1 tile art. This makes it
 useful immediately for parser validation and gives the future generated-map
-renderer a stable projection target.
+renderer a stable projection target. Player, mercenary, NPC, item, object, and
+missile markers all project through the same world-coordinate transform.
 
 When generated-map JSON is configured, the renderer draws blocked collision
 cells as the wall layer and generated exit objects as entrance markers. The JSON
@@ -151,7 +152,8 @@ packet-observed monsters, objects, items, or other known-position players.
   native map generation/static map ingestion is available.
 - HP/MP bars require max-life/max-mana stats. They remain unfilled until those
   stats are observed in the decoded state.
-- Missile/projectile packets are not represented yet.
+- Missile/projectile markers use packet class ids and target lines only; they
+  are not yet resolved into skill or art names.
 - The red/green capture toggle pauses or resumes snapshot publication. It does
   not terminate the underlying blocking raw-channel worker.
 - Runtime decoration toggling depends on backend/window-manager support. egui

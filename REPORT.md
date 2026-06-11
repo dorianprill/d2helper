@@ -117,6 +117,12 @@ Follow-up UI refinements:
 - Added logging/snapshot surfacing for `libd2`'s D2GS framing-resync warning so
   live capture no longer appears permanently frozen when a poisoned buffered
   payload forces the packet splitter to restart from a later TCP boundary.
+- Added mercenary and missile snapshots from `libd2::GameState`. The character
+  panel now shows mercenary assignment/life/revive details under the owner
+  player, the status strip counts mercenaries and missiles, and the automap
+  renders mercenary markers plus missile/projectile markers with target lines.
+- Added a focused snapshot regression test that drives libd2 with mercenary and
+  missile packets and verifies d2helper's UI-facing copied state.
 
 Challenges and decisions:
 
@@ -147,7 +153,8 @@ Known gaps:
 - No MPQ-backed tile art or DS1/DT1 map asset rendering.
 - HP/MP bars remain unfilled until max-life/max-mana stats are available in the
   decoded player state.
-- Missile/projectile markers are not implemented.
+- Missile/projectile markers are packet-class based and do not yet resolve to
+  skill/art names.
 - Capture can be paused from the UI, but the raw capture worker is not
   terminated until process exit.
 
@@ -156,8 +163,8 @@ Next steps:
 1. Add a first-class generated-map producer path so d2helper can invoke/cache
    map generation from seed/difficulty/area without manual JSON setup.
 2. Add pathfinding visualization over the generated collision grid.
-3. Extend `libd2` packet state for missiles and max resources, then surface
-   those fields in the snapshot.
+3. Improve missile/projectile classification after `libd2` can resolve missile
+   ids to skill/art metadata.
 4. Add item inspection UI after richer item records are available.
 5. Add window anchoring/tracking so the debug view can behave like a practical
    overlay instead of a standalone transparent window.

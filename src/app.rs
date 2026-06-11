@@ -241,6 +241,13 @@ fn draw_character_panel(
                 ui.label(position_label(player));
             });
             draw_resource_values(ui, player);
+            for mercenary in snapshot
+                .mercenaries
+                .iter()
+                .filter(|mercenary| mercenary.owner_id == player.id)
+            {
+                draw_mercenary_row(ui, mercenary);
+            }
         });
         ui.add_space(4.0);
     }
@@ -413,6 +420,42 @@ fn draw_resource_bar(
     ui.painter().rect_filled(filled, 2.0, color);
 }
 
+fn draw_mercenary_row(ui: &mut egui::Ui, mercenary: &crate::snapshot::MercenarySnapshot) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Merc").color(Color32::from_rgb(120, 230, 150)));
+        ui.label(mercenary_label(mercenary));
+        if let Some(level) = mercenary.level {
+            ui.separator();
+            ui.label(level_label(level));
+        }
+        if let Some(life) = mercenary.life_percent {
+            ui.separator();
+            ui.label(format!("life {life}%"));
+        }
+        if let Some(revive_cost) = mercenary.revive_cost {
+            ui.separator();
+            ui.label(format!("revive {revive_cost}g"));
+        }
+        ui.separator();
+        ui.label(mercenary_position_label(mercenary));
+    });
+}
+
+fn mercenary_label(mercenary: &crate::snapshot::MercenarySnapshot) -> String {
+    mercenary
+        .class_name
+        .clone()
+        .unwrap_or_else(|| format!("class {}", mercenary.class_id))
+}
+
+fn mercenary_position_label(mercenary: &crate::snapshot::MercenarySnapshot) -> String {
+    if mercenary.world_location_known {
+        format!("@ {},{}", mercenary.x, mercenary.y)
+    } else {
+        "@ unknown".to_owned()
+    }
+}
+
 fn resource_bar_fraction(value: Option<u32>, max_value: Option<u32>) -> Option<f32> {
     let value = value? as f32;
     let max_value = normalized_resource_max(max_value?, value)?;
@@ -476,6 +519,10 @@ fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapsho
         ui.label(format!("players {}", snapshot.players.len()));
         ui.separator();
         ui.label(format!("npcs {}", snapshot.npcs.len()));
+        ui.separator();
+        ui.label(format!("mercs {}", snapshot.mercenaries.len()));
+        ui.separator();
+        ui.label(format!("missiles {}", snapshot.missiles.len()));
         ui.separator();
         ui.label(format!("items {}", snapshot.items.len()));
         ui.separator();

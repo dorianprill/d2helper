@@ -45,6 +45,8 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
     draw_objects(&painter, &projector, snapshot);
     draw_items(&painter, &projector, snapshot);
     draw_npcs(&painter, &projector, snapshot);
+    draw_mercenaries(&painter, &projector, snapshot);
+    draw_missiles(&painter, &projector, snapshot);
     draw_players(&painter, &projector, snapshot);
     draw_focus_label(&painter, rect, focus);
 }
@@ -283,6 +285,83 @@ fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnap
         }
 
         let _ = npc.id;
+    }
+}
+
+fn draw_mercenaries(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
+    for mercenary in &snapshot.mercenaries {
+        if !mercenary.world_location_known {
+            continue;
+        }
+        let position = projector.project(mercenary.x, mercenary.y);
+        if !projector.rect.expand(48.0).contains(position) {
+            continue;
+        }
+        let life = mercenary.life_percent.unwrap_or(100);
+        let color = if life < 35 {
+            Color32::from_rgb(170, 120, 55)
+        } else {
+            Color32::from_rgb(95, 210, 130)
+        };
+        painter.circle_stroke(position, 5.0, Stroke::new(1.5_f32, color));
+        painter.circle_filled(position, 2.5, color);
+
+        let label = mercenary
+            .class_name
+            .as_deref()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("Merc {}", mercenary.class_id));
+        painter.text(
+            position + Vec2::new(7.0, -13.0),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(9.0),
+            Color32::from_rgb(180, 255, 195),
+        );
+
+        let _ = (mercenary.id, mercenary.skill_id, mercenary.experience);
+    }
+}
+
+fn draw_missiles(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
+    for missile in &snapshot.missiles {
+        let position = projector.project(missile.x, missile.y);
+        if !projector.rect.expand(48.0).contains(position) {
+            continue;
+        }
+        if let (Some(target_x), Some(target_y)) = (missile.target_x, missile.target_y) {
+            let target = projector.project(target_x, target_y);
+            painter.line_segment(
+                [position, target],
+                Stroke::new(0.8_f32, Color32::from_rgba_unmultiplied(255, 205, 85, 140)),
+            );
+        }
+
+        let color = Color32::from_rgb(255, 210, 90);
+        painter.add(Shape::convex_polygon(
+            diamond(position, 3.5, 3.5),
+            color,
+            Stroke::new(0.8_f32, Color32::from_rgb(80, 55, 20)),
+        ));
+
+        if let Some(class_id) = missile.class_id {
+            painter.text(
+                position + Vec2::new(5.0, 7.0),
+                egui::Align2::LEFT_CENTER,
+                format!("P{class_id}"),
+                egui::FontId::monospace(8.0),
+                Color32::from_rgb(255, 225, 130),
+            );
+        }
+
+        let _ = (
+            missile.id,
+            missile.current_frame,
+            missile.owner_type,
+            missile.owner_id,
+            missile.skill_level,
+            missile.pierce_level,
+        );
     }
 }
 

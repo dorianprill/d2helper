@@ -25,7 +25,8 @@ renders a compact automap-style view. It does not read or modify game memory.
       movement-verification bytes from decoded LoD packets
 - [x] Player-centered isometric automap debug renderer for revealed map cells,
       generated collision walls, and live markers
-- [x] Live markers for local/remote players, NPCs, objects, and ground items
+- [x] Live markers for local/remote players, mercenaries, NPCs, missiles,
+      objects, and ground items
 - [x] Read-only Classic/LoD MPQ static-data loading through `libd2`
 - [x] Monster, object, and item labels resolved from `MonStats.bin`,
       `Objects.bin`, item `.bin` files, and language `.tbl` files when an
@@ -43,7 +44,7 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [ ] Pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
 - [ ] Exact Diablo II window tracking/anchoring
-- [ ] Missile, spell, and projectile tracking
+- [x] Basic missile, spell, and projectile markers from decoded missile packets
 - [ ] Item filtering rules and item inspection
 - [ ] Battle.net account/character listing and selection
 

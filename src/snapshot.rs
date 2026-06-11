@@ -30,6 +30,10 @@ pub struct OverlaySnapshot {
     pub players: Vec<PlayerSnapshot>,
     /// Known monster and NPC units.
     pub npcs: Vec<NpcSnapshot>,
+    /// Known mercenary units assigned to players.
+    pub mercenaries: Vec<MercenarySnapshot>,
+    /// Known missile/projectile units.
+    pub missiles: Vec<MissileSnapshot>,
     /// Known map objects such as portals, shrines, chests, and waypoints.
     pub objects: Vec<ObjectSnapshot>,
     /// Known items. Only ground items have world coordinates.
@@ -129,6 +133,50 @@ impl OverlaySnapshot {
             })
             .collect();
 
+        let mercenaries = game_state
+            .mercenaries()
+            .iter()
+            .map(|(id, mercenary)| {
+                let location = mercenary.location();
+                MercenarySnapshot {
+                    id: *id,
+                    class_id: mercenary.class_id(),
+                    class_name: mercenary.class().map(|class| class.to_string()),
+                    owner_id: mercenary.owner_id(),
+                    skill_id: mercenary.skill_id(),
+                    world_location_known: mercenary.world_location_known(),
+                    life_percent: mercenary.life_percent(),
+                    level: mercenary.stat(UnitStat::Level as u16),
+                    experience: mercenary.stat(UnitStat::Experience as u16),
+                    revive_cost: mercenary.revive_cost(),
+                    x: location.x(),
+                    y: location.y(),
+                }
+            })
+            .collect();
+
+        let missiles = game_state
+            .missiles()
+            .iter()
+            .map(|(id, missile)| {
+                let location = missile.location();
+                let target = missile.target();
+                MissileSnapshot {
+                    id: *id,
+                    class_id: missile.class_id(),
+                    x: location.x(),
+                    y: location.y(),
+                    target_x: target.map(|target| target.x()),
+                    target_y: target.map(|target| target.y()),
+                    current_frame: missile.current_frame(),
+                    owner_type: missile.owner_type(),
+                    owner_id: missile.owner_id(),
+                    skill_level: missile.skill_level(),
+                    pierce_level: missile.pierce_level(),
+                }
+            })
+            .collect();
+
         let objects = game_state
             .objects()
             .iter()
@@ -186,6 +234,8 @@ impl OverlaySnapshot {
             game: GameSnapshot::from_game_state(game_state),
             players,
             npcs,
+            mercenaries,
+            missiles,
             objects,
             items,
             generated_map,
@@ -204,6 +254,17 @@ impl OverlaySnapshot {
         }
         for npc in &self.npcs {
             bounds.add(npc.x, npc.y);
+        }
+        for mercenary in &self.mercenaries {
+            if mercenary.world_location_known {
+                bounds.add(mercenary.x, mercenary.y);
+            }
+        }
+        for missile in &self.missiles {
+            bounds.add(missile.x, missile.y);
+            if let (Some(x), Some(y)) = (missile.target_x, missile.target_y) {
+                bounds.add(x, y);
+            }
         }
         for object in &self.objects {
             bounds.add(object.x, object.y);
@@ -296,6 +357,14 @@ impl OverlaySnapshot {
         }
         for npc in &self.npcs {
             bounds.add(npc.x, npc.y);
+        }
+        for mercenary in &self.mercenaries {
+            if mercenary.world_location_known {
+                bounds.add(mercenary.x, mercenary.y);
+            }
+        }
+        for missile in &self.missiles {
+            bounds.add(missile.x, missile.y);
         }
         for object in &self.objects {
             bounds.add(object.x, object.y);
@@ -545,6 +614,39 @@ pub struct NpcSnapshot {
     pub state: Option<u8>,
     pub x: u16,
     pub y: u16,
+}
+
+/// Mercenary unit data needed by the character list and map markers.
+#[derive(Debug, Clone)]
+pub struct MercenarySnapshot {
+    pub id: u32,
+    pub class_id: u16,
+    pub class_name: Option<String>,
+    pub owner_id: u32,
+    pub skill_id: u8,
+    pub world_location_known: bool,
+    pub life_percent: Option<u8>,
+    pub level: Option<u32>,
+    pub experience: Option<u32>,
+    pub revive_cost: Option<u16>,
+    pub x: u16,
+    pub y: u16,
+}
+
+/// Missile/projectile unit data needed by map markers.
+#[derive(Debug, Clone)]
+pub struct MissileSnapshot {
+    pub id: u32,
+    pub class_id: Option<u16>,
+    pub x: u16,
+    pub y: u16,
+    pub target_x: Option<u16>,
+    pub target_y: Option<u16>,
+    pub current_frame: Option<u16>,
+    pub owner_type: Option<u8>,
+    pub owner_id: Option<u32>,
+    pub skill_level: Option<u8>,
+    pub pierce_level: Option<u8>,
 }
 
 /// Object unit data needed by the map markers and counters.
@@ -876,6 +978,96 @@ mod tests {
         assert_eq!(player.life_max, Some(1280));
         assert_eq!(player.mana, Some(320));
         assert_eq!(player.mana_max, Some(960));
+    }
+
+    #[test]
+    fn mercenary_and_missile_snapshots_copy_live_state() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2::ServerMessage::AssignPlayer {
+            unit_id: 7,
+            class: 3,
+            szname: name16("Owner"),
+            x: 123,
+            y: 456,
+        }));
+        assert!(state.update(libd2::ServerMessage::GameHandshake {
+            unit_type: 0,
+            unit_id: 7,
+        }));
+        assert!(state.update(libd2::ServerMessage::AssignMerc {
+            skill_id: 0x0A,
+            summon_type: 0x0152,
+            player_id: 7,
+            merc_id: 0x5566_7788,
+            seed2: 0x99AA_BBCC,
+            init_seed: 0xDDEE_FF00,
+        }));
+        assert!(state.update(libd2::ServerMessage::NpcStop {
+            unit_id: 0x5566_7788,
+            x: 5200,
+            y: 5100,
+            unit_life: 73,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU8 {
+            attribute: UnitStat::Level as u8,
+            merc_id: 0x5566_7788,
+            amount: 90,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAddExpU16 {
+            stat_id: UnitStat::Experience as u8,
+            merc_id: 0x5566_7788,
+            value: 12,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercReviveCost {
+            merc_name_id: 0x1234,
+            revive_cost: 0x5678,
+            unused: 0,
+        }));
+        assert!(state.update(libd2::ServerMessage::MissileData {
+            missile_id: 0x1020_3040,
+            missile_class: 0x009A,
+            missile_x: 5210,
+            missile_y: 5110,
+            target_x: 5220,
+            target_y: 5120,
+            current_frame: 7,
+            owner_type: 0,
+            owner_id: 7,
+            skill_level: 5,
+            pierce_level: 1,
+        }));
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let mercenary = snapshot
+            .mercenaries
+            .iter()
+            .find(|mercenary| mercenary.id == 0x5566_7788)
+            .expect("mercenary snapshot");
+        assert_eq!(mercenary.class_name.as_deref(), Some("Desert Mercenary"));
+        assert_eq!(mercenary.owner_id, 7);
+        assert_eq!(mercenary.skill_id, 0x0A);
+        assert!(mercenary.world_location_known);
+        assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
+        assert_eq!(mercenary.life_percent, Some(73));
+        assert_eq!(mercenary.level, Some(90));
+        assert_eq!(mercenary.experience, Some(12));
+        assert_eq!(mercenary.revive_cost, Some(0x5678));
+
+        let missile = snapshot
+            .missiles
+            .iter()
+            .find(|missile| missile.id == 0x1020_3040)
+            .expect("missile snapshot");
+        assert_eq!(missile.class_id, Some(0x009A));
+        assert_eq!((missile.x, missile.y), (5210, 5110));
+        assert_eq!(
+            (missile.target_x, missile.target_y),
+            (Some(5220), Some(5120))
+        );
+        assert_eq!(missile.current_frame, Some(7));
+        assert_eq!(missile.owner_id, Some(7));
+        assert_eq!(missile.skill_level, Some(5));
+        assert_eq!(missile.pierce_level, Some(1));
     }
 
     #[test]
