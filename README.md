@@ -3,6 +3,8 @@
 D2helper is an early Diablo II Classic/Lord of Destruction helper overlay built
 with Rust, `egui`, and [`libd2`](https://github.com/dorianprill/libd2).
 
+![d2helper screenshot](d2helper-current.jpg)
+
 The current target is a passive LoD 1.14 debug overlay: it listens to legacy D2GS
 traffic on port `4000`, reconstructs live game state through `libd2`, and
 renders a compact automap-style view. It does not read or modify game memory.
