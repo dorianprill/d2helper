@@ -8,22 +8,23 @@ use std::{
     any::Any,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
 };
 
 use libd2::{
-    Client, ConnectionEvent, ConnectionTransportWarning, GameData, ServerMessageParseError,
+    Client, ConnectionEvent, ConnectionTransportWarning, GameData, ServerMessage,
+    ServerMessageParseError, UnitStat,
 };
 use pnet::datalink::{self, NetworkInterface};
 use tracing::{error, info, warn};
 
 use crate::generated_map::GeneratedMapCache;
 use crate::snapshot::{
-    replace_capture, replace_snapshot, CaptureCounters, CaptureSnapshot, OverlaySnapshot,
-    SharedOverlayState,
+    CaptureCounters, CaptureSnapshot, OverlaySnapshot, SharedOverlayState, replace_capture,
+    replace_snapshot,
 };
 
 /// Handle used by the UI thread to start the capture worker once.
@@ -135,7 +136,9 @@ fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
 fn log_connection_event(event: &ConnectionEvent) {
     match event {
         ConnectionEvent::ServerMessage {
-            packet, applied, ..
+            packet,
+            message,
+            applied,
         } => {
             info!(
                 packet_id = %format_args!("0x{:02X}", packet.packet_id()),
@@ -143,6 +146,7 @@ fn log_connection_event(event: &ConnectionEvent) {
                 applied,
                 "parsed D2GS server packet"
             );
+            log_server_message_details(message);
         }
         ConnectionEvent::ParseError { packet, error } => match error {
             ServerMessageParseError::UnexpectedLength {
@@ -170,6 +174,57 @@ fn log_connection_event(event: &ConnectionEvent) {
             }
         },
         ConnectionEvent::TransportWarning { warning } => log_transport_warning(warning),
+    }
+}
+
+fn log_server_message_details(message: &ServerMessage) {
+    match message {
+        ServerMessage::AllyPartyInfo {
+            unit_type,
+            unit_life,
+            unit_id,
+            unit_area,
+        } => {
+            info!(
+                unit_type,
+                unit_id, unit_life, unit_area, "parsed D2GS ally party info"
+            );
+        }
+        ServerMessage::AttributeUpdate {
+            unit_id,
+            attribute,
+            amount,
+        } => {
+            if let Some(stat_name) = resource_stat_label(*attribute) {
+                info!(
+                    unit_id,
+                    attribute, stat_name, amount, "parsed D2GS resource stat update"
+                );
+            }
+        }
+        ServerMessage::AssignMerc {
+            skill_id,
+            summon_type,
+            player_id,
+            merc_id,
+            ..
+        } => {
+            info!(
+                skill_id,
+                summon_type, player_id, merc_id, "parsed D2GS merc assignment"
+            );
+        }
+        _ => {}
+    }
+}
+
+fn resource_stat_label(attribute: u8) -> Option<&'static str> {
+    match attribute as u16 {
+        value if value == UnitStat::Life as u16 => Some("life"),
+        value if value == UnitStat::LifeMax as u16 => Some("life_max"),
+        value if value == UnitStat::Mana as u16 => Some("mana"),
+        value if value == UnitStat::ManaMax as u16 => Some("mana_max"),
+        _ => None,
     }
 }
 
@@ -237,19 +292,33 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
         ConnectionTransportWarning::BufferedD2gsPayload {
             payload_len,
             buffered_len,
+            snapshot,
         } => {
             info!(
                 payload_len,
-                buffered_len, "buffered partial D2GS payload waiting for more TCP bytes"
+                buffered_len,
+                packet_buffer_len = snapshot.packet_buffer_len,
+                compressed_buffer_len = snapshot.compressed_buffer_len,
+                payload_prefix = %hex_prefix(&snapshot.payload_prefix, 32),
+                packet_buffer_prefix = %hex_prefix(&snapshot.packet_buffer_prefix, 32),
+                compressed_buffer_prefix = %hex_prefix(&snapshot.compressed_buffer_prefix, 32),
+                "buffered partial D2GS payload waiting for more TCP bytes"
             );
         }
         ConnectionTransportWarning::D2gsFramingReset {
             payload_len,
             discarded_len,
+            snapshot,
         } => {
             warn!(
                 payload_len,
-                discarded_len, "reset D2GS packet framing after buffered payload exceeded limit"
+                discarded_len,
+                packet_buffer_len = snapshot.packet_buffer_len,
+                compressed_buffer_len = snapshot.compressed_buffer_len,
+                payload_prefix = %hex_prefix(&snapshot.payload_prefix, 32),
+                packet_buffer_prefix = %hex_prefix(&snapshot.packet_buffer_prefix, 32),
+                compressed_buffer_prefix = %hex_prefix(&snapshot.compressed_buffer_prefix, 32),
+                "reset D2GS packet framing after buffered payload exceeded limit"
             );
         }
     }

@@ -42,7 +42,7 @@ impl D2HelperApp {
             capture,
             background_opacity: 255,
             decorations_enabled: true,
-            maximized: false,
+            maximized: true,
             download_status: None,
         }
     }

@@ -75,17 +75,17 @@ impl OverlaySnapshot {
         game_data: Option<&GameData>,
         generated_map: Option<Arc<GeneratedMap>>,
     ) -> Self {
-        let current_area_name = game_state
-            .map()
-            .area_id
-            .map(|area_id| display_area_name(area_id, game_data));
-
         let mut players: Vec<_> = game_state
             .players()
             .iter()
             .map(|(id, player)| {
                 let location = player.location();
                 let is_local = game_state.local_player_id() == Some(*id);
+                let area_id = player.area_id().or_else(|| {
+                    (is_local || player.world_location_known())
+                        .then_some(game_state.map().area_id)
+                        .flatten()
+                });
                 PlayerSnapshot {
                     id: *id,
                     name: player.name().to_owned(),
@@ -93,11 +93,7 @@ impl OverlaySnapshot {
                     level: player.level(),
                     x: location.x(),
                     y: location.y(),
-                    area_name: if is_local || player.world_location_known() {
-                        current_area_name.clone()
-                    } else {
-                        None
-                    },
+                    area_name: area_id.map(|area_id| display_area_name(area_id, game_data)),
                     world_location_known: player.world_location_known(),
                     is_local,
                     life: player_life_value(player),
@@ -978,6 +974,37 @@ mod tests {
         assert_eq!(player.life_max, Some(1280));
         assert_eq!(player.mana, Some(320));
         assert_eq!(player.mana_max, Some(960));
+    }
+
+    #[test]
+    fn remote_player_snapshot_uses_party_life_and_area_without_world_position() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2::ServerMessage::PlayerJoined {
+            packet_length: 36,
+            player_id: 7,
+            character_class: 1,
+            character_name: name16("Remote"),
+            character_level: 42,
+            party_id: 0xffff,
+            unknown: [0; 8],
+        }));
+        assert!(state.update(libd2::ServerMessage::AllyPartyInfo {
+            unit_type: 0,
+            unit_life: 87,
+            unit_id: 7,
+            unit_area: 2,
+        }));
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let player = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == 7)
+            .expect("remote player snapshot");
+
+        assert_eq!(player.life, Some(87));
+        assert_eq!(player.area_name.as_deref(), Some("Blood Moor"));
+        assert!(!player.world_location_known);
     }
 
     #[test]
