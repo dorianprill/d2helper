@@ -1,15 +1,15 @@
-//! UI-owned snapshot types derived from `libd2r::GameState`.
+//! UI-owned snapshot types derived from `libd2::GameState`.
 //!
-//! The capture thread receives a borrowed `GameState` from `libd2r` for every
+//! The capture thread receives a borrowed `GameState` from `libd2` for every
 //! decoded server event. The egui thread should not hold that borrow, so this
 //! module copies only the fields needed by the overlay into small, cloneable
 //! structs. This also keeps rendering insulated from packet-parser internals.
 
 use std::{collections::HashMap, sync::Arc};
 
-use libd2r::core::entity::Entity;
-use libd2r::core::game_state::MapTile;
-use libd2r::{
+use libd2::core::entity::Entity;
+use libd2::core::game_state::MapTile;
+use libd2::{
     Area, CharacterExportOptions, CharacterFile, ConnectionEvent, ConnectionTransportWarning,
     Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, Player, ServerMessageParseError,
     UnitStat,
@@ -20,6 +20,7 @@ pub type SharedOverlayState = std::sync::Arc<std::sync::RwLock<OverlaySnapshot>>
 
 /// Immutable, render-ready view of the latest known game and capture state.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct OverlaySnapshot {
     /// Packet-capture lifecycle and event counters.
     pub capture: CaptureSnapshot,
@@ -36,24 +37,10 @@ pub struct OverlaySnapshot {
     /// Generated static collision map for the current seed/difficulty/area.
     pub generated_map: Option<Arc<GeneratedMap>>,
     /// Exportable local-player `.d2s` payload when the current game state is
-    /// rich enough for `libd2r`'s legacy save export.
+    /// rich enough for `libd2`'s legacy save export.
     pub character_export: Option<CharacterExportSnapshot>,
 }
 
-impl Default for OverlaySnapshot {
-    fn default() -> Self {
-        Self {
-            capture: CaptureSnapshot::default(),
-            game: GameSnapshot::default(),
-            players: Vec::new(),
-            npcs: Vec::new(),
-            objects: Vec::new(),
-            items: Vec::new(),
-            generated_map: None,
-            character_export: None,
-        }
-    }
-}
 
 impl OverlaySnapshot {
     /// Copies the currently decoded game state into a UI snapshot.
@@ -597,8 +584,8 @@ pub struct ItemStateSnapshot {
     pub flags: u32,
 }
 
-impl From<libd2r::ItemStateFlags> for ItemStateSnapshot {
-    fn from(flags: libd2r::ItemStateFlags) -> Self {
+impl From<libd2::ItemStateFlags> for ItemStateSnapshot {
+    fn from(flags: libd2::ItemStateFlags) -> Self {
         Self {
             unit_type: flags.unit_type(),
             unit_id: flags.unit_id(),
@@ -812,7 +799,7 @@ fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libd2r::core::update::Update;
+    use libd2::core::update::Update;
 
     #[test]
     fn count_by_area_sorts_by_area_id() {
@@ -856,7 +843,7 @@ mod tests {
     #[test]
     fn remote_player_snapshot_uses_stat_life_and_mana_without_vitals() {
         let mut state = GameState::default();
-        assert!(state.update(libd2r::ServerMessage::PlayerJoined {
+        assert!(state.update(libd2::ServerMessage::PlayerJoined {
             packet_length: 36,
             player_id: 7,
             character_class: 1,
@@ -871,7 +858,7 @@ mod tests {
             (UnitStat::Mana, 320),
             (UnitStat::ManaMax, 960),
         ] {
-            assert!(state.update(libd2r::ServerMessage::AttributeUpdate {
+            assert!(state.update(libd2::ServerMessage::AttributeUpdate {
                 unit_id: 7,
                 attribute: attribute as u8,
                 amount,
@@ -894,14 +881,14 @@ mod tests {
     #[test]
     fn local_player_snapshot_exposes_character_export_when_state_is_exportable() {
         let mut state = GameState::default();
-        assert!(state.update(libd2r::ServerMessage::AssignPlayer {
+        assert!(state.update(libd2::ServerMessage::AssignPlayer {
             unit_id: 7,
             class: 3,
             szname: name16("Saver"),
             x: 123,
             y: 456,
         }));
-        assert!(state.update(libd2r::ServerMessage::GameHandshake {
+        assert!(state.update(libd2::ServerMessage::GameHandshake {
             unit_type: 0,
             unit_id: 7,
         }));
@@ -920,8 +907,8 @@ mod tests {
         let mut counters = CaptureCounters::default();
 
         counters.record(&ConnectionEvent::ServerMessage {
-            packet: libd2r::D2GSPacket { data: vec![0x00] },
-            message: libd2r::ServerMessage::GameLoading,
+            packet: libd2::D2GSPacket { data: vec![0x00] },
+            message: libd2::ServerMessage::GameLoading,
             applied: true,
         });
         counters.record(&ConnectionEvent::TransportWarning {

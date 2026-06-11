@@ -1,6 +1,6 @@
 //! Blocking D2GS capture worker integration.
 //!
-//! `libd2r::Client` owns the packet-capture loop and currently runs until the
+//! `libd2::Client` owns the packet-capture loop and currently runs until the
 //! process exits. D2helper starts it on a dedicated thread so the egui event loop
 //! can keep repainting while packets are decoded and snapshots are published.
 
@@ -14,7 +14,7 @@ use std::{
     thread,
 };
 
-use libd2r::{
+use libd2::{
     Client, ConnectionEvent, ConnectionTransportWarning, GameData, ServerMessageParseError,
 };
 use pnet::datalink::{self, NetworkInterface};
@@ -48,7 +48,7 @@ impl CaptureHandle {
 
     /// Toggles snapshot publication while leaving the blocking worker alive.
     ///
-    /// `libd2r::Client` currently owns a blocking raw-channel listener. Keeping
+    /// `libd2::Client` currently owns a blocking raw-channel listener. Keeping
     /// that worker alive avoids platform-specific cancellation of a packet
     /// capture channel and lets the UI resume on the next decoded D2GS event.
     pub fn toggle_enabled(&self, shared: &SharedOverlayState) {

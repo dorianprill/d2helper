@@ -1,10 +1,10 @@
 # D2helper
 
 D2helper is an early Diablo II Classic/Lord of Destruction helper overlay built
-with Rust, `egui`, and [`libd2r`](https://github.com/dorianprill/libd2).
+with Rust, `egui`, and [`libd2`](https://github.com/dorianprill/libd2).
 
 The current target is a passive LoD 1.14 debug overlay: it listens to legacy D2GS
-traffic on port `4000`, reconstructs live game state through `libd2r`, and
+traffic on port `4000`, reconstructs live game state through `libd2`, and
 renders a compact automap-style view. It does not read or modify game memory.
 
 ## Feature Status
@@ -12,7 +12,7 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] Transparent native `egui` window
 - [x] Runtime controls for native frame on/off, maximize/restore, and close
 - [x] Background-only opacity slider, including fully transparent mode
-- [x] Auto-started passive LoD D2GS capture worker using `libd2r::Client`
+- [x] Auto-started passive LoD D2GS capture worker using `libd2::Client`
 - [x] Red/green capture toggle for pausing or resuming UI snapshot updates
 - [x] UI-safe snapshot layer between the blocking capture thread and egui
 - [x] Capture counters and packet parse-error display
@@ -26,7 +26,7 @@ renders a compact automap-style view. It does not read or modify game memory.
 - [x] Player-centered isometric automap debug renderer for revealed map cells,
       generated collision walls, and live markers
 - [x] Live markers for local/remote players, NPCs, objects, and ground items
-- [x] Read-only Classic/LoD MPQ static-data loading through `libd2r`
+- [x] Read-only Classic/LoD MPQ static-data loading through `libd2`
 - [x] Monster, object, and item labels resolved from `MonStats.bin`,
       `Objects.bin`, item `.bin` files, and language `.tbl` files when an
       install path is available
@@ -38,7 +38,7 @@ renders a compact automap-style view. It does not read or modify game memory.
       `D2HELPER_MAP_JSON` or `D2HELPER_MAP_JSON_DIR`
 - [x] Generated collision wall rendering and generated exit markers when map
       JSON is available
-- [x] Local-player character download action using `libd2r` legacy `.d2s` export
+- [x] Local-player character download action using `libd2` legacy `.d2s` export
 - [ ] Native generated static map background from seed/difficulty/act/area
 - [ ] Pathfinding visualization
 - [ ] MPQ/DS1/DT1-backed tile art
@@ -52,18 +52,18 @@ renders a compact automap-style view. It does not read or modify game memory.
 - Rust stable toolchain
 - Git
 - Native graphics/windowing dependencies required by `eframe`/`winit`
-- Packet-capture dependencies required by `libd2r`
+- Packet-capture dependencies required by `libd2`
 
 Inside the `d2suite` checkout, `d2helper` depends on the sibling `libd2`
 checkout so both projects can be developed in lockstep:
 
 ```toml
-libd2r = { path = "../libd2" }
+libd2 = { path = "../libd2" }
 ```
 
 ### Windows Notes
 
-`libd2r` currently uses packet-capture support through `pnet`. On Windows this
+`libd2` currently uses packet-capture support through `pnet`. On Windows this
 typically needs a WinPcap-compatible installation and development libraries:
 
 - Install Npcap, preferably with WinPcap API-compatible mode enabled.
@@ -152,7 +152,7 @@ target\debug\d2helper.exe
    waits for D2GS traffic.
 7. Use the red/green capture button only if you want to pause or resume UI
    snapshot updates.
-8. Once the local player has been identified and `libd2r` has enough data to
+8. Once the local player has been identified and `libd2` has enough data to
    synthesize a save, click `Download` in the local player row. D2helper writes
    the exported `.d2s` into the current user's default `Downloads` folder and
    avoids overwriting by appending `-1`, `-2`, and so on when needed.
@@ -215,7 +215,7 @@ contain the `cap_net_raw` bit for libpnet to create a raw packet channel.
 ## Architecture
 
 The capture loop is blocking, so d2helper runs it on a worker thread. The worker
-receives `ConnectionEvent`s from `libd2r`, converts the current `GameState` into
+receives `ConnectionEvent`s from `libd2`, converts the current `GameState` into
 a small `OverlaySnapshot`, and writes it behind an `Arc<RwLock<_>>`.
 
 The egui thread never waits for packets. It reads the latest snapshot each frame

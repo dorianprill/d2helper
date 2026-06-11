@@ -3,7 +3,7 @@ name = "d2helper"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Diablo II LoD game-state visualization overlay using libd2r and egui."
+description = "Diablo II LoD game-state visualization overlay using libd2 and egui."
 
 [dependencies]
 directories = "6"
@@ -11,7 +11,7 @@ eframe = { version = "0.32.3", default-features = false, features = [
     "default_fonts",
     "glow",
 ] }
-libd2r = { path = "../libd2" }
+libd2 = { path = "../libd2" }
 pnet = "0.29.0"
 tracing = "0.1"
 tracing-appender = "0.2"

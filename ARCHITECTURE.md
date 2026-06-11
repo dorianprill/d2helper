@@ -1,7 +1,7 @@
 # D2helper Architecture
 
 D2helper is a passive Diablo II Classic/LoD visualization overlay. It uses
-`libd2r` for packet capture, packet decoding, and game-state reconstruction, and
+`libd2` for packet capture, packet decoding, and game-state reconstruction, and
 keeps the UI layer focused on rendering a read-only snapshot of the latest known
 state.
 
@@ -13,7 +13,7 @@ state.
   memory.
 - Render the local player, other players, monsters, objects, items, and revealed
   map cells in a Diablo-style isometric debug map.
-- Provide enough live debug information to validate and improve `libd2r` packet
+- Provide enough live debug information to validate and improve `libd2` packet
   parsing before adding polished overlay features.
 
 ## Component Overview
@@ -22,13 +22,13 @@ state.
 Diablo II client/server traffic
           |
           v
-libd2r::Client capture loop
+libd2::Client capture loop
           |
           v
-ConnectionEvent + libd2r::GameState
+ConnectionEvent + libd2::GameState
           |
           v
-capture worker thread <--- read-only libd2r::GameData from Classic/LoD MPQs
+capture worker thread <--- read-only libd2::GameData from Classic/LoD MPQs
           ^
           |
  optional generated-map JSON from @diablo2/map-compatible output
@@ -47,7 +47,7 @@ egui app panels + automap renderer
 - `capture`: owns the blocking packet-capture worker. The app starts this
   worker at launch; the toolbar toggle pauses or resumes UI snapshot
   publication while the raw-channel listener remains alive. The worker starts
-  `libd2r::Client::start_with_events`, records packet counters, and publishes a
+  `libd2::Client::start_with_events`, records packet counters, and publishes a
   fresh overlay snapshot after every event. It also loads optional read-only
   Classic/LoD MPQ static data once at startup for name resolution and optional
   generated-map JSON for wall/exit rendering.
@@ -59,7 +59,7 @@ egui app panels + automap renderer
   depends on a live parser borrow. When `GameData` is available, monster,
   object, and item ids are resolved into display names during snapshot creation.
   The same layer now also precomputes an exportable local-player legacy `.d2s`
-  payload when `libd2r` can synthesize one from the current `GameState`.
+  payload when `libd2` can synthesize one from the current `GameState`.
 - `app`: owns egui layout: toolbar, character list, bottom status strip, and map
   section. The local-player download action writes the precomputed `.d2s` into
   the OS default Downloads folder with numeric suffix deconfliction.
@@ -160,9 +160,9 @@ packet-observed monsters, objects, items, or other known-position players.
 
 ## Next Architecture Steps
 
-1. Add a generated-map layer sourced from `libd2r` seed/difficulty/act/area map
+1. Add a generated-map layer sourced from `libd2` seed/difficulty/act/area map
    generation.
 2. Add collision tiles as a separate render layer once static map generation is
    reliable.
-3. Add an item-inspection data path after `libd2r` exposes richer item records.
+3. Add an item-inspection data path after `libd2` exposes richer item records.
 4. Add window tracking or anchoring for a real overlay mode.

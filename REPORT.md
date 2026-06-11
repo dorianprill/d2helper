@@ -3,11 +3,11 @@
 ## 2026-06-05
 
 Started the d2helper implementation as a Rust/egui binary that depends on
-`libd2r`.
+`libd2`.
 
 Implemented:
 
-- Cargo project setup with `eframe`, `tracing`, and `libd2r`.
+- Cargo project setup with `eframe`, `tracing`, and `libd2`.
 - Transparent, borderless egui window with dark visuals.
 - Toolbar with packet-capture start button, opacity slider, event counters, and
   parse-error display.
@@ -36,25 +36,25 @@ Follow-up UI refinements:
   maximize.
 - Removed the automap canvas' second background fill so the opacity slider has
   the same visual progression in the character list and map sections.
-- Switched the `libd2r` dependency from a sibling path checkout to the public
+- Switched the `libd2` dependency from a sibling path checkout to the public
   Git repository at `https://github.com/dorianprill/libd2`.
 - Added persistent tracing output to `logs/d2helper.log` and surfaced capture
   worker waiting/failure status in the toolbar.
 - Added Linux process capability logging and packet-capture interface indices to
   diagnose raw-channel permission and interface-binding failures.
-- Updated the locked `libd2r` Git dependency to the capture fix that disables
+- Updated the locked `libd2` Git dependency to the capture fix that disables
   unnecessary pnet promiscuous mode for local LoD traffic.
 - Changed the automap renderer from whole-known-map bounds fitting to a
   fixed-scale camera centered on the local player.
 - Removed noisy debug labels from NPC/object markers and added per-packet
   parse-error logging with packet id, expected/actual length, and packet bytes.
-- Updated the locked `libd2r` Git dependency to include live-capture direction
+- Updated the locked `libd2` Git dependency to include live-capture direction
   filtering and packet-observed level-warp tracking.
 - Changed startup logging to truncate `logs/d2helper.log` on every launch while
   capture iteration is still fast and noisy.
 - Added compact class-id labels to packet-observed object/warp markers so
   entrance/object packets are visible before static object-name data exists.
-- Updated the locked `libd2r` Git dependency to the player-vitals/item-state
+- Updated the locked `libd2` Git dependency to the player-vitals/item-state
   packet work.
 - Surfaced raw HP/mana/stamina, regeneration counters, and movement
   verification bytes in the character panel.
@@ -62,7 +62,7 @@ Follow-up UI refinements:
 - Added raw object state/portal metadata to object marker labels and
   targetability styling.
 - Added item-state flag highlighting for ground item markers.
-- Switched the `libd2r` dependency back to the sibling `../libd2` checkout so
+- Switched the `libd2` dependency back to the sibling `../libd2` checkout so
   d2helper can consume newly implemented library APIs during suite development.
 - Added optional read-only Classic/LoD MPQ static-data loading on the capture
   worker. The path is resolved from `D2HELPER_D2_PATH`, `LIBD2_D2_INSTALL`, or a
@@ -80,7 +80,7 @@ Follow-up UI refinements:
 - Started the overlay at full background opacity (`255`) by default.
 - Reduced the isometric tile scale so the automap shows more surrounding world
   at the same window size.
-- Consumed libd2r's split between player roster membership and current
+- Consumed libd2's split between player roster membership and current
   world-location visibility. Player rows remain in the character list after
   visibility-only `0x0A` removals, while map markers disappear until a fresh
   position arrives.
@@ -103,7 +103,7 @@ Follow-up UI refinements:
   decoded max-life/max-mana stats, including Diablo fixed-point normalization
   when live packet values are in 1/256 units.
 - Enabled the local-player `Download` button. D2helper now uses
-  `libd2r::CharacterFile::export_legacy_from_game_state` to precompute a legacy
+  `libd2::CharacterFile::export_legacy_from_game_state` to precompute a legacy
   `.d2s` payload from the live local-player `GameState` and writes it to the
   platform default Downloads directory on click.
 - Added UI/log status for character-save exports and filename deconfliction so
@@ -114,13 +114,13 @@ Follow-up UI refinements:
 - Added Downloads-directory resolution that prefers the platform-reported user
   Downloads path and falls back to `<home>/Downloads` when the OS does not
   expose one directly.
-- Added logging/snapshot surfacing for `libd2r`'s D2GS framing-resync warning so
+- Added logging/snapshot surfacing for `libd2`'s D2GS framing-resync warning so
   live capture no longer appears permanently frozen when a poisoned buffered
   payload forces the packet splitter to restart from a later TCP boundary.
 
 Challenges and decisions:
 
-- `libd2r::Client` capture is blocking, so d2helper starts it on a worker thread
+- `libd2::Client` capture is blocking, so d2helper starts it on a worker thread
   and keeps egui responsive by reading snapshots.
 - The UI stores a lightweight `OverlaySnapshot` instead of an `Arc<RwLock<GameState>>`.
   This avoids coupling egui rendering to mutable parser internals while still
@@ -137,7 +137,7 @@ Challenges and decisions:
   map generator contract until native Rust generation is available.
 - The capture toggle does not stop the raw packet-capture worker; it only pauses
   snapshot publication. A true stop/restart requires a cancellable capture
-  abstraction below `libd2r::Client`.
+  abstraction below `libd2::Client`.
 
 Known gaps:
 
@@ -156,7 +156,7 @@ Next steps:
 1. Add a first-class generated-map producer path so d2helper can invoke/cache
    map generation from seed/difficulty/area without manual JSON setup.
 2. Add pathfinding visualization over the generated collision grid.
-3. Extend `libd2r` packet state for missiles and max resources, then surface
+3. Extend `libd2` packet state for missiles and max resources, then surface
    those fields in the snapshot.
 4. Add item inspection UI after richer item records are available.
 5. Add window anchoring/tracking so the debug view can behave like a practical

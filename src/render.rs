@@ -6,7 +6,7 @@
 //! can reuse the same snapshot and projection boundary.
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
-use libd2r::{GeneratedMap, MapObjectKind};
+use libd2::{GeneratedMap, MapObjectKind};
 
 use crate::snapshot::{MapFocus, OverlaySnapshot};
 
@@ -24,7 +24,7 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
     painter.rect_stroke(
         rect,
         0.0,
-        Stroke::new(1.0, Color32::from_gray(70)),
+        Stroke::new(1.0_f32, Color32::from_gray(70)),
         egui::StrokeKind::Inside,
     );
 
@@ -175,7 +175,7 @@ fn draw_generated_exits(painter: &Painter, projector: &IsoProjector, map: &Gener
         painter.add(Shape::convex_polygon(
             diamond(position, 8.0, 8.0),
             color,
-            Stroke::new(1.0, Color32::from_rgb(20, 25, 28)),
+            Stroke::new(1.0_f32, Color32::from_rgb(20, 25, 28)),
         ));
         let label = object
             .name
@@ -204,7 +204,7 @@ fn draw_revealed_tiles(painter: &Painter, projector: &IsoProjector, snapshot: &O
         painter.add(Shape::convex_polygon(
             diamond(center, TILE_WIDTH * 0.72, TILE_HEIGHT * 0.72),
             Color32::from_rgba_unmultiplied(75, 115, 145, 96),
-            Stroke::new(0.8, Color32::from_rgba_unmultiplied(145, 190, 220, 150)),
+            Stroke::new(0.8_f32, Color32::from_rgba_unmultiplied(145, 190, 220, 150)),
         ));
     }
 }
@@ -318,7 +318,7 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
                 painter.rect_stroke(
                     rect.expand(2.0),
                     1.0,
-                    Stroke::new(1.0, Color32::from_rgb(255, 230, 130)),
+                    Stroke::new(1.0_f32, Color32::from_rgb(255, 230, 130)),
                     egui::StrokeKind::Inside,
                 );
             }

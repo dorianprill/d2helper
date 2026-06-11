@@ -4,7 +4,7 @@
 //! automap chunks, but they do not carry full wall collision. Until native Rust
 //! seed generation is complete, d2helper can import JSON emitted by the
 //! reverse-engineered `@diablo2/map` generator and attach the matching
-//! [`libd2r::GeneratedMap`] to each UI snapshot.
+//! [`libd2::GeneratedMap`] to each UI snapshot.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-use libd2r::{Area, Difficulty, GameState, GeneratedMap, MapGenerationRequest};
+use libd2::{Area, Difficulty, GameState, GeneratedMap, MapGenerationRequest};
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,21 +102,17 @@ impl GeneratedMapCache {
                 if !path.exists() {
                     continue;
                 }
-                match std::fs::read_to_string(&path)
+                if let Some(map) = std::fs::read_to_string(&path)
                     .ok()
-                    .and_then(|json| request.normalize_mapgen_json(&json).ok())
-                {
-                    Some(map) => {
-                        info!(
-                            path = %path.display(),
-                            seed = %format_args!("0x{:08x}", key.seed),
-                            difficulty = key.difficulty,
-                            area_id = key.area_id,
-                            "loaded generated collision map"
-                        );
-                        return Some(Arc::new(map));
-                    }
-                    None => {}
+                    .and_then(|json| request.normalize_mapgen_json(&json).ok()) {
+                    info!(
+                        path = %path.display(),
+                        seed = %format_args!("0x{:08x}", key.seed),
+                        difficulty = key.difficulty,
+                        area_id = key.area_id,
+                        "loaded generated collision map"
+                    );
+                    return Some(Arc::new(map));
                 }
             }
         }
