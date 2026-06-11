@@ -366,11 +366,11 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
     ui.horizontal_wrapped(|ui| {
         ui.colored_label(
             Color32::from_rgb(220, 80, 85),
-            format!("HP {}", raw_value_label(player.life)),
+            format!("HP {}", resource_value_label(player.life, player.life_max)),
         );
         ui.colored_label(
             Color32::from_rgb(90, 130, 240),
-            format!("MP {}", raw_value_label(player.mana)),
+            format!("MP {}", resource_value_label(player.mana, player.mana_max)),
         );
         if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
             ui.label(format!("regen {life_regen}/{mana_regen}"));
@@ -428,10 +428,14 @@ fn draw_mercenary_row(ui: &mut egui::Ui, mercenary: &crate::snapshot::MercenaryS
             ui.separator();
             ui.label(level_label(level));
         }
-        if let Some(life) = mercenary.life_percent {
-            ui.separator();
-            ui.label(format!("life {life}%"));
-        }
+        ui.separator();
+        ui.colored_label(
+            Color32::from_rgb(220, 80, 85),
+            format!(
+                "HP {}",
+                mercenary_life_label(mercenary.life, mercenary.life_max, mercenary.life_percent)
+            ),
+        );
         if let Some(revive_cost) = mercenary.revive_cost {
             ui.separator();
             ui.label(format!("revive {revive_cost}g"));
@@ -439,6 +443,11 @@ fn draw_mercenary_row(ui: &mut egui::Ui, mercenary: &crate::snapshot::MercenaryS
         ui.separator();
         ui.label(mercenary_position_label(mercenary));
     });
+    let (life, life_max) =
+        mercenary_life_bar_values(mercenary.life, mercenary.life_max, mercenary.life_percent);
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
+    draw_resource_bar(ui, rect, life, life_max, Color32::from_rgb(120, 30, 35));
 }
 
 fn mercenary_label(mercenary: &crate::snapshot::MercenarySnapshot) -> String {
@@ -457,30 +466,85 @@ fn mercenary_position_label(mercenary: &crate::snapshot::MercenarySnapshot) -> S
 }
 
 fn resource_bar_fraction(value: Option<u32>, max_value: Option<u32>) -> Option<f32> {
-    let value = value? as f32;
-    let max_value = normalized_resource_max(max_value?, value)?;
+    let (value, max_value) = normalized_resource_values(value?, max_value?)?;
     Some((value / max_value).clamp(0.0, 1.0))
 }
 
-fn normalized_resource_max(max_value: u32, current_value: f32) -> Option<f32> {
+fn normalized_resource_values(value: u32, max_value: u32) -> Option<(f32, f32)> {
     if max_value == 0 {
         return None;
     }
 
-    let raw_max = max_value as f32;
-    if current_value > raw_max {
-        let fixed_point_max = raw_max * 256.0;
-        if current_value <= fixed_point_max {
-            return Some(fixed_point_max);
+    if value > max_value {
+        let fixed_point_max = max_value.checked_mul(256)?;
+        if value <= fixed_point_max {
+            return Some((value as f32 / 256.0, max_value as f32));
         }
     }
-    Some(raw_max)
+
+    if max_value >= 256 && max_value % 256 == 0 {
+        let raw_max = max_value / 256;
+        if value <= raw_max {
+            return Some((value as f32, raw_max as f32));
+        }
+        if value % 256 == 0 {
+            return Some((value as f32 / 256.0, raw_max as f32));
+        }
+    }
+
+    Some((value as f32, max_value as f32))
 }
 
-fn raw_value_label(value: Option<u32>) -> String {
-    value
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "--".to_owned())
+fn resource_value_label(value: Option<u32>, max_value: Option<u32>) -> String {
+    let Some(value) = value else {
+        return "--".to_owned();
+    };
+    let Some(max_value) = max_value else {
+        return value.to_string();
+    };
+    let Some((value, max_value)) = normalized_resource_values(value, max_value) else {
+        return value.to_string();
+    };
+    format!(
+        "{}/{}",
+        resource_number_label(value),
+        resource_number_label(max_value)
+    )
+}
+
+fn mercenary_life_label(
+    life: Option<u32>,
+    life_max: Option<u32>,
+    life_percent: Option<u8>,
+) -> String {
+    if life.is_some() {
+        resource_value_label(life, life_max)
+    } else {
+        life_percent
+            .map(|life| format!("{life}%"))
+            .unwrap_or_else(|| "--".to_owned())
+    }
+}
+
+fn mercenary_life_bar_values(
+    life: Option<u32>,
+    life_max: Option<u32>,
+    life_percent: Option<u8>,
+) -> (Option<u32>, Option<u32>) {
+    if life.is_some() {
+        (life, life_max)
+    } else {
+        (life_percent.map(u32::from), life_percent.map(|_| 100))
+    }
+}
+
+fn resource_number_label(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.05 {
+        format!("{}", rounded as u32)
+    } else {
+        format!("{value:.1}")
+    }
 }
 
 fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot) {
@@ -590,8 +654,20 @@ mod tests {
     }
 
     #[test]
+    fn resource_fraction_accepts_raw_current_with_fixed_point_max() {
+        assert_eq!(resource_bar_fraction(Some(10), Some(2560)), Some(1.0));
+    }
+
+    #[test]
     fn resource_fraction_is_unknown_without_maximum() {
         assert_eq!(resource_bar_fraction(Some(1280), None), None);
+    }
+
+    #[test]
+    fn resource_labels_normalize_fixed_point_values() {
+        assert_eq!(resource_value_label(Some(1280), Some(10)), "5/10");
+        assert_eq!(resource_value_label(Some(10), Some(2560)), "10/10");
+        assert_eq!(resource_value_label(Some(1280), Some(2560)), "5/10");
     }
 
     #[test]

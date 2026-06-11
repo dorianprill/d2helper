@@ -54,7 +54,7 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::RevealedTileSnapshot;
+    use crate::snapshot::{ObjectSnapshot, RevealedTileSnapshot};
 
     #[test]
     fn iso_projection_keeps_center_on_rect_center() {
@@ -114,6 +114,31 @@ mod tests {
     fn local_axis_range_clamps_visible_world_to_generated_map_bounds() {
         assert_eq!(local_axis_range(5200, 5250, 5190, 40), Some((10, 39)));
         assert_eq!(local_axis_range(5100, 5110, 5190, 40), None);
+    }
+
+    #[test]
+    fn object_filter_hides_only_exact_dummy_names() {
+        let mut object = ObjectSnapshot {
+            id: 1,
+            class_id: 1,
+            name: Some("Dummy".to_owned()),
+            object_type: 0,
+            state: 0,
+            portal_flags: None,
+            is_targetable: None,
+            x: 0,
+            y: 0,
+        };
+        assert!(object_is_hidden_on_map(&object));
+
+        object.name = Some("DummyS2".to_owned());
+        assert!(object_is_hidden_on_map(&object));
+
+        object.name = Some("DummyS3".to_owned());
+        assert!(!object_is_hidden_on_map(&object));
+
+        object.name = None;
+        assert!(!object_is_hidden_on_map(&object));
     }
 }
 
@@ -416,6 +441,9 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
 
 fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for object in &snapshot.objects {
+        if object_is_hidden_on_map(object) {
+            continue;
+        }
         let position = projector.project(object.x, object.y);
         if !projector.rect.expand(32.0).contains(position) {
             continue;
@@ -457,6 +485,13 @@ fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
 
         let _ = (object.id, object.class_id, object.object_type);
     }
+}
+
+fn object_is_hidden_on_map(object: &crate::snapshot::ObjectSnapshot) -> bool {
+    matches!(
+        object.name.as_deref().map(str::trim),
+        Some("Dummy" | "DummyS2")
+    )
 }
 
 fn draw_focus_label(painter: &Painter, rect: Rect, focus: MapFocus) {

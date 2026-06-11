@@ -142,6 +142,8 @@ impl OverlaySnapshot {
                     skill_id: mercenary.skill_id(),
                     world_location_known: mercenary.world_location_known(),
                     life_percent: mercenary.life_percent(),
+                    life: mercenary.stat(UnitStat::Life as u16),
+                    life_max: mercenary.stat(UnitStat::LifeMax as u16),
                     level: mercenary.stat(UnitStat::Level as u16),
                     experience: mercenary.stat(UnitStat::Experience as u16),
                     revive_cost: mercenary.revive_cost(),
@@ -622,6 +624,8 @@ pub struct MercenarySnapshot {
     pub skill_id: u8,
     pub world_location_known: bool,
     pub life_percent: Option<u8>,
+    pub life: Option<u32>,
+    pub life_max: Option<u32>,
     pub level: Option<u32>,
     pub experience: Option<u32>,
     pub revive_cost: Option<u16>,
@@ -1003,6 +1007,7 @@ mod tests {
             .expect("remote player snapshot");
 
         assert_eq!(player.life, Some(87));
+        assert_eq!(player.life_max, Some(100));
         assert_eq!(player.area_name.as_deref(), Some("Blood Moor"));
         assert!(!player.world_location_known);
     }
@@ -1040,6 +1045,16 @@ mod tests {
             merc_id: 0x5566_7788,
             amount: 90,
         }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+            attribute: UnitStat::Life as u8,
+            merc_id: 0x5566_7788,
+            amount: 1280,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+            attribute: UnitStat::LifeMax as u8,
+            merc_id: 0x5566_7788,
+            amount: 2560,
+        }));
         assert!(state.update(libd2::ServerMessage::MercAddExpU16 {
             stat_id: UnitStat::Experience as u8,
             merc_id: 0x5566_7788,
@@ -1076,6 +1091,8 @@ mod tests {
         assert!(mercenary.world_location_known);
         assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
         assert_eq!(mercenary.life_percent, Some(73));
+        assert_eq!(mercenary.life, Some(1280));
+        assert_eq!(mercenary.life_max, Some(2560));
         assert_eq!(mercenary.level, Some(90));
         assert_eq!(mercenary.experience, Some(12));
         assert_eq!(mercenary.revive_cost, Some(0x5678));
