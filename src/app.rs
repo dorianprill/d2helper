@@ -49,7 +49,8 @@ impl D2HelperApp {
 }
 
 impl eframe::App for D2HelperApp {
-    fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let context = ui.ctx().clone();
         context.request_repaint_after(Duration::from_millis(16));
 
         let snapshot = read_snapshot(&self.shared);
@@ -58,9 +59,9 @@ impl eframe::App for D2HelperApp {
             self.maximized = maximized;
         }
 
-        egui::TopBottomPanel::top("toolbar")
+        egui::Panel::top("toolbar")
             .frame(egui::Frame::NONE.fill(panel_fill))
-            .show(context, |ui| {
+            .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
                     let capture_enabled = self.capture.enabled();
                     let (capture_label, capture_fill) = if capture_enabled {
@@ -147,26 +148,26 @@ impl eframe::App for D2HelperApp {
                 });
             });
 
-        egui::SidePanel::left("characters")
+        egui::Panel::left("characters")
             .resizable(true)
-            .default_width(560.0)
-            .min_width(360.0)
+            .default_size(560.0)
+            .min_size(360.0)
             .frame(egui::Frame::NONE.fill(panel_fill))
-            .show(context, |ui| {
+            .show_inside(ui, |ui| {
                 if let Some(status) = draw_character_panel(ui, &snapshot) {
                     self.download_status = Some(status);
                 }
             });
 
-        egui::TopBottomPanel::bottom("status")
+        egui::Panel::bottom("status")
             .frame(egui::Frame::NONE.fill(panel_fill))
-            .show(context, |ui| {
+            .show_inside(ui, |ui| {
                 draw_status_bar(ui, &snapshot);
             });
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(panel_fill))
-            .show(context, |ui| {
+            .show_inside(ui, |ui| {
                 draw_map_panel(ui, &snapshot);
             });
     }

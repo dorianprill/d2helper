@@ -313,8 +313,8 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
         };
         let rect = Rect::from_center_size(position, Vec2::splat(5.0));
         painter.rect_filled(rect, 1.0, color);
-        if let Some(flags) = item.state_flags {
-            if flags.flags != 0 {
+        if let Some(flags) = item.state_flags
+            && flags.flags != 0 {
                 painter.rect_stroke(
                     rect.expand(2.0),
                     1.0,
@@ -322,7 +322,6 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
                     egui::StrokeKind::Inside,
                 );
             }
-        }
 
         if let Some(label) = item.name.as_deref().or(item.code.as_deref()) {
             painter.text(
