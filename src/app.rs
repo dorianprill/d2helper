@@ -19,7 +19,7 @@ use tracing::{info, warn};
 use crate::capture::CaptureHandle;
 use crate::render::render_automap;
 use crate::snapshot::{
-    count_by_area, empty_shared_state, read_snapshot, CharacterExportSnapshot, SharedOverlayState,
+    CharacterExportSnapshot, SharedOverlayState, count_by_area, empty_shared_state, read_snapshot,
 };
 
 /// Main egui application state.
@@ -83,6 +83,11 @@ impl eframe::App for D2HelperApp {
                         .clicked()
                     {
                         self.capture.toggle_enabled(&self.shared);
+                    }
+
+                    if ui.button("Reset state").clicked() {
+                        self.capture.request_state_reset(&self.shared);
+                        self.download_status = None;
                     }
 
                     ui.separator();
@@ -266,18 +271,18 @@ fn draw_character_panel(
 
 #[derive(Debug, Default)]
 struct PartyColorMap {
-    indices: HashMap<PartyId, usize>,
+    indices: HashMap<PartyColorKey, usize>,
 }
 
 impl PartyColorMap {
     fn from_players(players: &[crate::snapshot::PlayerSnapshot]) -> Self {
         let mut indices = HashMap::new();
         for player in players {
-            let PartyAffiliation::Party(party_id) = player.party_affiliation else {
+            let Some(key) = PartyColorKey::from_affiliation(player.party_affiliation) else {
                 continue;
             };
             let next_index = indices.len();
-            indices.entry(party_id).or_insert(next_index);
+            indices.entry(key).or_insert(next_index);
         }
 
         Self { indices }
@@ -287,16 +292,37 @@ impl PartyColorMap {
         match party_affiliation {
             PartyAffiliation::Unknown => Color32::from_rgb(14, 14, 16),
             PartyAffiliation::Unpartied => Color32::from_rgb(0, 0, 0),
+            PartyAffiliation::LocalParty => self
+                .indices
+                .get(&PartyColorKey::Local)
+                .map(|index| party_row_color(*index))
+                .unwrap_or_else(|| Color32::from_rgb(14, 14, 16)),
             PartyAffiliation::Party(party_id) => self
                 .indices
-                .get(&party_id)
+                .get(&PartyColorKey::Id(party_id))
                 .map(|index| party_row_color(*index))
                 .unwrap_or_else(|| Color32::from_rgb(14, 14, 16)),
         }
     }
 
-    fn party_number(&self, party_id: PartyId) -> Option<usize> {
-        self.indices.get(&party_id).map(|index| index + 1)
+    fn party_number(&self, key: PartyColorKey) -> Option<usize> {
+        self.indices.get(&key).map(|index| index + 1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum PartyColorKey {
+    Local,
+    Id(PartyId),
+}
+
+impl PartyColorKey {
+    fn from_affiliation(party_affiliation: PartyAffiliation) -> Option<Self> {
+        match party_affiliation {
+            PartyAffiliation::LocalParty => Some(Self::Local),
+            PartyAffiliation::Party(party_id) => Some(Self::Id(party_id)),
+            PartyAffiliation::Unknown | PartyAffiliation::Unpartied => None,
+        }
     }
 }
 
@@ -315,8 +341,12 @@ fn party_label(colors: &PartyColorMap, party_affiliation: PartyAffiliation) -> S
     match party_affiliation {
         PartyAffiliation::Unknown => "party --".to_owned(),
         PartyAffiliation::Unpartied => "unpartied".to_owned(),
+        PartyAffiliation::LocalParty => colors
+            .party_number(PartyColorKey::Local)
+            .map(|number| format!("party {number}"))
+            .unwrap_or_else(|| "party --".to_owned()),
         PartyAffiliation::Party(party_id) => colors
-            .party_number(party_id)
+            .party_number(PartyColorKey::Id(party_id))
             .map(|number| format!("party {number}"))
             .unwrap_or_else(|| "party --".to_owned()),
     }
@@ -417,7 +447,7 @@ fn area_label(player: &crate::snapshot::PlayerSnapshot) -> String {
     player
         .area_name
         .as_deref()
-        .map(|name| format!("area {name}"))
+        .map(str::to_owned)
         .unwrap_or_else(|| "area --".to_owned())
 }
 
@@ -541,33 +571,13 @@ fn mercenary_position_label(mercenary: &crate::snapshot::MercenarySnapshot) -> S
 }
 
 fn resource_bar_fraction(value: Option<u32>, max_value: Option<u32>) -> Option<f32> {
-    let (value, max_value) = normalized_resource_values(value?, max_value?)?;
-    Some((value / max_value).clamp(0.0, 1.0))
-}
-
-fn normalized_resource_values(value: u32, max_value: u32) -> Option<(f32, f32)> {
+    let value = value?;
+    let max_value = max_value?;
     if max_value == 0 {
         return None;
     }
 
-    if value > max_value {
-        let fixed_point_max = max_value.checked_mul(256)?;
-        if value <= fixed_point_max {
-            return Some((value as f32 / 256.0, max_value as f32));
-        }
-    }
-
-    if max_value >= 256 && max_value % 256 == 0 {
-        let raw_max = max_value / 256;
-        if value <= raw_max {
-            return Some((value as f32, raw_max as f32));
-        }
-        if value % 256 == 0 {
-            return Some((value as f32 / 256.0, raw_max as f32));
-        }
-    }
-
-    Some((value as f32, max_value as f32))
+    Some((value as f32 / max_value as f32).clamp(0.0, 1.0))
 }
 
 fn resource_value_label(value: Option<u32>, max_value: Option<u32>) -> String {
@@ -577,14 +587,11 @@ fn resource_value_label(value: Option<u32>, max_value: Option<u32>) -> String {
     let Some(max_value) = max_value else {
         return value.to_string();
     };
-    let Some((value, max_value)) = normalized_resource_values(value, max_value) else {
+    if max_value == 0 {
         return value.to_string();
-    };
-    format!(
-        "{}/{}",
-        resource_number_label(value),
-        resource_number_label(max_value)
-    )
+    }
+
+    format!("{value}/{max_value}")
 }
 
 fn mercenary_life_label(
@@ -637,15 +644,6 @@ fn party_life_label(value: u16) -> String {
         "{}%",
         ((value.min(128) as f32 / 128.0) * 100.0).round() as u32
     )
-}
-
-fn resource_number_label(value: f32) -> String {
-    let rounded = value.round();
-    if (value - rounded).abs() < 0.05 {
-        format!("{}", rounded as u32)
-    } else {
-        format!("{value:.1}")
-    }
 }
 
 fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot) {
@@ -745,30 +743,29 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn resource_fraction_uses_fixed_point_max_when_needed() {
-        assert_eq!(resource_bar_fraction(Some(1280), Some(10)), Some(0.5));
+    fn resource_fraction_uses_snapshot_resource_values() {
+        assert_eq!(resource_bar_fraction(Some(5), Some(10)), Some(0.5));
     }
 
     #[test]
-    fn resource_fraction_accepts_raw_packet_unit_max() {
-        assert_eq!(resource_bar_fraction(Some(1280), Some(2560)), Some(0.5));
-    }
-
-    #[test]
-    fn resource_fraction_accepts_raw_current_with_fixed_point_max() {
-        assert_eq!(resource_bar_fraction(Some(10), Some(2560)), Some(1.0));
+    fn resource_fraction_clamps_overfilled_values() {
+        assert_eq!(resource_bar_fraction(Some(66), Some(62)), Some(1.0));
     }
 
     #[test]
     fn resource_fraction_is_unknown_without_maximum() {
-        assert_eq!(resource_bar_fraction(Some(1280), None), None);
+        assert_eq!(resource_bar_fraction(Some(10), None), None);
     }
 
     #[test]
-    fn resource_labels_normalize_fixed_point_values() {
-        assert_eq!(resource_value_label(Some(1280), Some(10)), "5/10");
-        assert_eq!(resource_value_label(Some(10), Some(2560)), "10/10");
-        assert_eq!(resource_value_label(Some(1280), Some(2560)), "5/10");
+    fn resource_fraction_is_unknown_with_zero_maximum() {
+        assert_eq!(resource_bar_fraction(Some(10), Some(0)), None);
+    }
+
+    #[test]
+    fn resource_labels_use_snapshot_resource_values() {
+        assert_eq!(resource_value_label(Some(5), Some(10)), "5/10");
+        assert_eq!(resource_value_label(Some(66), Some(62)), "66/62");
     }
 
     #[test]
@@ -787,11 +784,19 @@ mod tests {
     }
 
     #[test]
+    fn area_label_uses_plain_area_name() {
+        let mut player = player_snapshot_with_party(1, PartyAffiliation::Unpartied);
+        player.area_name = Some("Rogue Encampment".to_owned());
+
+        assert_eq!(area_label(&player), "Rogue Encampment");
+    }
+
+    #[test]
     fn party_color_map_assigns_colors_by_first_seen_party_id() {
         let first = PartyId::new(0x2200);
         let second = PartyId::new(0x1100);
         let players = vec![
-            player_snapshot_with_party(1, PartyAffiliation::Party(first)),
+            player_snapshot_with_party(1, PartyAffiliation::LocalParty),
             player_snapshot_with_party(2, PartyAffiliation::Party(first)),
             player_snapshot_with_party(3, PartyAffiliation::Party(second)),
         ];
@@ -799,12 +804,16 @@ mod tests {
         let colors = PartyColorMap::from_players(&players);
 
         assert_eq!(
-            colors.row_fill(PartyAffiliation::Party(first)),
+            colors.row_fill(PartyAffiliation::LocalParty),
             party_row_color(0)
         );
         assert_eq!(
-            colors.row_fill(PartyAffiliation::Party(second)),
+            colors.row_fill(PartyAffiliation::Party(first)),
             party_row_color(1)
+        );
+        assert_eq!(
+            colors.row_fill(PartyAffiliation::Party(second)),
+            party_row_color(2)
         );
         assert_eq!(
             colors.row_fill(PartyAffiliation::Unpartied),

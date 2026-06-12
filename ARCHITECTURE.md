@@ -48,9 +48,10 @@ egui app panels + automap renderer
   worker at launch; the toolbar toggle pauses or resumes UI snapshot
   publication while the raw-channel listener remains alive. The worker starts
   `libd2::Client::start_with_events`, records packet counters, and publishes a
-  fresh overlay snapshot after every event. It also loads optional read-only
-  Classic/LoD MPQ static data once at startup for name resolution and optional
-  generated-map JSON for wall/exit rendering.
+  fresh overlay snapshot at a bounded cadence, with immediate publication for
+  transport-recovery resets. It also loads optional read-only Classic/LoD MPQ
+  static data once at startup for name resolution and optional generated-map
+  JSON for wall/exit rendering.
 - `generated_map`: caches generated collision maps keyed by seed, difficulty,
   and area. It imports `@diablo2/map`-compatible JSON from
   `D2HELPER_MAP_JSON` or `D2HELPER_MAP_JSON_DIR`.

@@ -123,6 +123,14 @@ Follow-up UI refinements:
   renders mercenary markers plus missile/projectile markers with target lines.
 - Added a focused snapshot regression test that drives libd2 with mercenary and
   missile packets and verifies d2helper's UI-facing copied state.
+- Switched capture-interface diagnostics to libd2's route-probed selector so
+  logs show the same adapter that the capture worker will bind.
+- Reduced capture hot-path UI/log pressure by moving generic parsed-packet
+  logs to debug level and publishing full overlay snapshots at a bounded cadence
+  instead of after every packet. Transport recovery resets still publish
+  immediately so desync diagnostics remain visible.
+- Surfaced libd2's timed TCP gap recovery warning in the UI-facing capture
+  status labels and log output.
 
 Challenges and decisions:
 
@@ -179,4 +187,4 @@ git diff --check
 cargo build --release
 ```
 
-Result: passed. 20 tests.
+Result: passed. 30 tests.

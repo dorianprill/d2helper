@@ -573,7 +573,7 @@ pub struct PlayerSnapshot {
     pub party_affiliation: PartyAffiliation,
     /// Remote party-member life fraction in Diablo II's 0..=128 scale.
     pub party_life: Option<u8>,
-    /// Current life in raw Diablo II packet/stat units.
+    /// Current life as a game-facing integer.
     ///
     /// The local player usually gets this from `0x18`/`0x95` resource packets.
     /// Remote players often only expose it as `UnitStat::Life` through the
@@ -581,7 +581,7 @@ pub struct PlayerSnapshot {
     pub life: Option<u32>,
     /// Maximum life from `UnitStat::LifeMax`.
     pub life_max: Option<u32>,
-    /// Current mana in raw Diablo II packet/stat units.
+    /// Current mana as a game-facing integer.
     ///
     /// As with life, local-player resource packets and remote-player stat
     /// updates use different D2GS paths.
@@ -888,6 +888,9 @@ fn parse_error_label(error: &ServerMessageParseError) -> String {
 
 fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
     match warning {
+        ConnectionTransportWarning::D2gsSessionReset { .. } => {
+            "D2GS transport session reset; parser buffers cleared".to_owned()
+        }
         ConnectionTransportWarning::DuplicateTcpSegment { .. } => {
             "duplicate TCP segment ignored".to_owned()
         }
@@ -901,6 +904,9 @@ fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
             "buffered TCP segment released".to_owned()
         }
         ConnectionTransportWarning::TcpGapReset { .. } => "TCP gap reset D2GS reader".to_owned(),
+        ConnectionTransportWarning::TcpGapTimeoutReset { .. } => {
+            "TCP gap timed out; D2GS reader reset".to_owned()
+        }
         ConnectionTransportWarning::BufferedD2gsPayload { .. } => {
             "partial D2GS payload buffered".to_owned()
         }
@@ -967,10 +973,10 @@ mod tests {
             unknown: [0; 8],
         }));
         for (attribute, amount) in [
-            (UnitStat::Life, 640),
-            (UnitStat::LifeMax, 1280),
-            (UnitStat::Mana, 320),
-            (UnitStat::ManaMax, 960),
+            (UnitStat::Life, 640 * 256),
+            (UnitStat::LifeMax, 1280 * 256),
+            (UnitStat::Mana, 320 * 256),
+            (UnitStat::ManaMax, 960 * 256),
         ] {
             assert!(state.update(libd2::ServerMessage::AttributeUpdate {
                 unit_id: 7,
@@ -1063,15 +1069,15 @@ mod tests {
             merc_id: 0x5566_7788,
             amount: 90,
         }));
-        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+        assert!(state.update(libd2::ServerMessage::MercAttributeU32 {
             attribute: UnitStat::Life as u8,
             merc_id: 0x5566_7788,
-            amount: 1280,
+            amount: 1280 * 256,
         }));
-        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+        assert!(state.update(libd2::ServerMessage::MercAttributeU32 {
             attribute: UnitStat::LifeMax as u8,
             merc_id: 0x5566_7788,
-            amount: 2560,
+            amount: 2560 * 256,
         }));
         assert!(state.update(libd2::ServerMessage::MercAddExpU16 {
             stat_id: UnitStat::Experience as u8,
@@ -1108,7 +1114,7 @@ mod tests {
         assert_eq!(mercenary.skill_id, 0x0A);
         assert!(mercenary.world_location_known);
         assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
-        assert_eq!(mercenary.life_percent, Some(73));
+        assert_eq!(mercenary.life_percent, Some(57));
         assert_eq!(mercenary.life, Some(1280));
         assert_eq!(mercenary.life_max, Some(2560));
         assert_eq!(mercenary.level, Some(90));
