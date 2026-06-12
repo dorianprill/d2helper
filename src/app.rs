@@ -435,39 +435,47 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
             Color32::from_rgb(220, 80, 85),
             format!("HP {}", player_life_label(player)),
         );
-        ui.colored_label(
-            Color32::from_rgb(90, 130, 240),
-            format!("MP {}", resource_value_label(player.mana, player.mana_max)),
-        );
-        if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
-            ui.label(format!("regen {life_regen}/{mana_regen}"));
-        }
-        if let (Some(dx), Some(dy)) = (player.movement_dx, player.movement_dy) {
-            ui.label(format!("move {dx},{dy}"));
+        if player.is_local {
+            ui.colored_label(
+                Color32::from_rgb(90, 130, 240),
+                format!("MP {}", resource_value_label(player.mana, player.mana_max)),
+            );
+            if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
+                ui.label(format!("regen {life_regen}/{mana_regen}"));
+            }
+            if let (Some(dx), Some(dy)) = (player.movement_dx, player.movement_dy) {
+                ui.label(format!("move {dx},{dy}"));
+            }
         }
     });
 
     let width = ui.available_width();
     let height = 8.0;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, height * 2.0 + 2.0), egui::Sense::hover());
+    let bar_count = if player.is_local { 2.0 } else { 1.0 };
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width, height * bar_count + 2.0 * (bar_count - 1.0)),
+        egui::Sense::hover(),
+    );
+    let (life, life_max) = player_life_bar_values(player);
     draw_resource_bar(
         ui,
         egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
-        player.life,
-        player.life_max,
+        life,
+        life_max,
         Color32::from_rgb(120, 30, 35),
     );
-    draw_resource_bar(
-        ui,
-        egui::Rect::from_min_size(
-            rect.min + egui::vec2(0.0, height + 2.0),
-            egui::vec2(width, height),
-        ),
-        player.mana,
-        player.mana_max,
-        Color32::from_rgb(35, 55, 135),
-    );
+    if player.is_local {
+        draw_resource_bar(
+            ui,
+            egui::Rect::from_min_size(
+                rect.min + egui::vec2(0.0, height + 2.0),
+                egui::vec2(width, height),
+            ),
+            player.mana,
+            player.mana_max,
+            Color32::from_rgb(35, 55, 135),
+        );
+    }
 }
 
 fn draw_resource_bar(
@@ -616,6 +624,14 @@ fn player_life_label(player: &crate::snapshot::PlayerSnapshot) -> String {
     resource_value_label(player.life, player.life_max)
 }
 
+fn player_life_bar_values(player: &crate::snapshot::PlayerSnapshot) -> (Option<u32>, Option<u32>) {
+    if let Some(party_life) = player.party_life {
+        (Some(u32::from(party_life)), Some(128))
+    } else {
+        (player.life, player.life_max)
+    }
+}
+
 fn party_life_label(value: u16) -> String {
     format!(
         "{}%",
@@ -760,6 +776,14 @@ mod tests {
         assert_eq!(party_life_label(128), "100%");
         assert_eq!(party_life_label(64), "50%");
         assert_eq!(party_life_label(200), "100%");
+    }
+
+    #[test]
+    fn player_life_bar_uses_party_life_fraction_for_remote_players() {
+        let mut player = player_snapshot_with_party(1, PartyAffiliation::Unpartied);
+        player.party_life = Some(64);
+
+        assert_eq!(player_life_bar_values(&player), (Some(64), Some(128)));
     }
 
     #[test]
