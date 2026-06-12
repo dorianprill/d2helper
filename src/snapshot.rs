@@ -114,11 +114,6 @@ impl OverlaySnapshot {
             })
             .collect();
         sort_player_snapshots(&mut players);
-        let player_party_affiliations: HashMap<_, _> = players
-            .iter()
-            .map(|player| (player.id, player.party_affiliation))
-            .collect();
-
         let npcs = game_state
             .npcs()
             .iter()
@@ -149,10 +144,6 @@ impl OverlaySnapshot {
                     class_id: mercenary.class_id(),
                     class_name: mercenary.class().map(|class| class.to_string()),
                     owner_id: mercenary.owner_id(),
-                    party_affiliation: player_party_affiliations
-                        .get(&mercenary.owner_id())
-                        .copied()
-                        .unwrap_or(PartyAffiliation::Unknown),
                     skill_id: mercenary.skill_id(),
                     world_location_known: mercenary.world_location_known(),
                     life_percent: mercenary.life_percent(),
@@ -642,7 +633,6 @@ pub struct MercenarySnapshot {
     pub class_id: u16,
     pub class_name: Option<String>,
     pub owner_id: u32,
-    pub party_affiliation: PartyAffiliation,
     pub skill_id: u8,
     pub world_location_known: bool,
     pub life_percent: Option<u8>,
@@ -1115,10 +1105,6 @@ mod tests {
             .expect("mercenary snapshot");
         assert_eq!(mercenary.class_name.as_deref(), Some("Desert Mercenary"));
         assert_eq!(mercenary.owner_id, 7);
-        assert_eq!(
-            mercenary.party_affiliation,
-            PartyAffiliation::Party(libd2::PartyId::new(0x1234))
-        );
         assert_eq!(mercenary.skill_id, 0x0A);
         assert!(mercenary.world_location_known);
         assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
