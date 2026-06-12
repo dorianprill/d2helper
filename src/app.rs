@@ -85,6 +85,11 @@ impl eframe::App for D2HelperApp {
                         self.capture.toggle_enabled(&self.shared);
                     }
 
+                    if ui.button("Reset state").clicked() {
+                        self.capture.request_state_reset(&self.shared);
+                        self.download_status = None;
+                    }
+
                     ui.separator();
                     ui.label(if snapshot.capture.running {
                         RichText::new("capture running").color(Color32::from_rgb(90, 220, 120))
@@ -442,7 +447,7 @@ fn area_label(player: &crate::snapshot::PlayerSnapshot) -> String {
     player
         .area_name
         .as_deref()
-        .map(|name| format!("area {name}"))
+        .map(str::to_owned)
         .unwrap_or_else(|| "area --".to_owned())
 }
 
@@ -776,6 +781,14 @@ mod tests {
         player.party_life = Some(64);
 
         assert_eq!(player_life_bar_values(&player), (Some(64), Some(128)));
+    }
+
+    #[test]
+    fn area_label_uses_plain_area_name() {
+        let mut player = player_snapshot_with_party(1, PartyAffiliation::Unpartied);
+        player.area_name = Some("Rogue Encampment".to_owned());
+
+        assert_eq!(area_label(&player), "Rogue Encampment");
     }
 
     #[test]

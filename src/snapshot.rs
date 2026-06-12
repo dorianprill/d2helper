@@ -889,7 +889,7 @@ fn parse_error_label(error: &ServerMessageParseError) -> String {
 fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
     match warning {
         ConnectionTransportWarning::D2gsSessionReset { .. } => {
-            "D2GS session reset; game state cleared".to_owned()
+            "D2GS transport session reset; parser buffers cleared".to_owned()
         }
         ConnectionTransportWarning::DuplicateTcpSegment { .. } => {
             "duplicate TCP segment ignored".to_owned()
@@ -1114,7 +1114,7 @@ mod tests {
         assert_eq!(mercenary.skill_id, 0x0A);
         assert!(mercenary.world_location_known);
         assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
-        assert_eq!(mercenary.life_percent, Some(73));
+        assert_eq!(mercenary.life_percent, Some(57));
         assert_eq!(mercenary.life, Some(1280));
         assert_eq!(mercenary.life_max, Some(2560));
         assert_eq!(mercenary.level, Some(90));

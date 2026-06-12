@@ -34,6 +34,7 @@ const SNAPSHOT_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 pub struct CaptureHandle {
     started: bool,
     enabled: Arc<AtomicBool>,
+    reset_requested: Arc<AtomicBool>,
 }
 
 impl CaptureHandle {
@@ -42,6 +43,7 @@ impl CaptureHandle {
         Self {
             started: false,
             enabled: Arc::new(AtomicBool::new(true)),
+            reset_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -68,6 +70,23 @@ impl CaptureHandle {
         }
     }
 
+    /// Requests a manual state reset from the capture worker and clears the
+    /// current UI snapshot immediately.
+    pub fn request_state_reset(&self, shared: &SharedOverlayState) {
+        self.reset_requested.store(true, Ordering::Relaxed);
+        if let Ok(mut guard) = shared.write() {
+            let mut capture = guard.capture.clone();
+            if capture.running {
+                capture.status = "state reset requested".to_owned();
+            }
+            capture.last_error = None;
+            *guard = OverlaySnapshot {
+                capture,
+                ..OverlaySnapshot::default()
+            };
+        }
+    }
+
     /// Spawns the blocking LoD packet-capture worker.
     pub fn start(&mut self, shared: SharedOverlayState) {
         if self.started {
@@ -85,9 +104,10 @@ impl CaptureHandle {
         );
 
         let enabled = self.enabled.clone();
+        let reset_requested = self.reset_requested.clone();
         thread::Builder::new()
             .name("d2helper-capture".to_owned())
-            .spawn(move || run_capture(shared, enabled))
+            .spawn(move || run_capture(shared, enabled, reset_requested))
             .expect("failed to spawn d2helper capture thread");
     }
 }
@@ -98,7 +118,11 @@ impl Default for CaptureHandle {
     }
 }
 
-fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
+fn run_capture(
+    shared: SharedOverlayState,
+    enabled: Arc<AtomicBool>,
+    reset_requested: Arc<AtomicBool>,
+) {
     info!("starting LoD D2GS capture worker");
     log_process_capabilities();
     log_capture_interfaces();
@@ -112,10 +136,24 @@ fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
         let mut generated_maps = GeneratedMapCache::from_env();
         let mut last_snapshot_publish = Instant::now() - SNAPSHOT_PUBLISH_INTERVAL;
 
-        client.start_with_events(|event, game_state| {
+        client.start_with_mut_events(|event, game_state| {
             log_connection_event(&event);
             counters.record(&event);
             let now = Instant::now();
+            if reset_requested.swap(false, Ordering::Relaxed) {
+                game_state.reset();
+                replace_snapshot(
+                    &worker_shared,
+                    OverlaySnapshot {
+                        capture: counters.snapshot(enabled.load(Ordering::Relaxed)),
+                        ..OverlaySnapshot::default()
+                    },
+                );
+                last_snapshot_publish = now;
+                info!("manually reset D2GS game state from d2helper toolbar");
+                return;
+            }
+
             let should_publish = should_publish_snapshot(&event, now, last_snapshot_publish);
             if !should_publish {
                 return;
@@ -159,7 +197,6 @@ fn should_publish_snapshot(
             warning: ConnectionTransportWarning::TcpGapReset { .. }
                 | ConnectionTransportWarning::TcpGapTimeoutReset { .. }
                 | ConnectionTransportWarning::D2gsFramingReset { .. }
-                | ConnectionTransportWarning::D2gsSessionReset { .. }
         }
     )
 }
@@ -262,7 +299,10 @@ fn resource_stat_label(attribute: u8) -> Option<&'static str> {
 fn log_transport_warning(warning: &ConnectionTransportWarning) {
     match warning {
         ConnectionTransportWarning::D2gsSessionReset { reason } => {
-            info!(?reason, "reset D2GS game state after TCP session boundary")
+            info!(
+                ?reason,
+                "reset D2GS parser buffers after TCP session boundary"
+            )
         }
         ConnectionTransportWarning::DuplicateTcpSegment {
             sequence,
@@ -527,3 +567,49 @@ fn log_process_capabilities() {
 
 #[cfg(not(target_os = "linux"))]
 fn log_process_capabilities() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::snapshot::{RevealedTileSnapshot, empty_shared_state, read_snapshot};
+
+    #[test]
+    fn d2gs_session_reset_warning_does_not_force_snapshot_publish() {
+        let now = Instant::now();
+
+        assert!(!should_publish_snapshot(
+            &ConnectionEvent::TransportWarning {
+                warning: ConnectionTransportWarning::D2gsSessionReset {
+                    reason: libd2::D2gsSessionResetReason::NewTcpStream,
+                },
+            },
+            now,
+            now,
+        ));
+    }
+
+    #[test]
+    fn request_state_reset_clears_ui_snapshot_and_preserves_counters() {
+        let shared = empty_shared_state();
+        {
+            let mut snapshot = shared.write().expect("snapshot lock");
+            snapshot.capture.running = true;
+            snapshot.capture.status = "receiving LoD D2GS traffic".to_owned();
+            snapshot.capture.total_events = 12;
+            snapshot.capture.last_error = Some("old warning".to_owned());
+            snapshot.game.revealed_tiles.push(RevealedTileSnapshot {
+                x: 1,
+                y: 2,
+                area_id: 3,
+            });
+        }
+
+        CaptureHandle::new().request_state_reset(&shared);
+
+        let snapshot = read_snapshot(&shared);
+        assert_eq!(snapshot.capture.total_events, 12);
+        assert_eq!(snapshot.capture.status, "state reset requested");
+        assert_eq!(snapshot.capture.last_error, None);
+        assert!(snapshot.game.revealed_tiles.is_empty());
+    }
+}
