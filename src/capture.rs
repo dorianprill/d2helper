@@ -159,6 +159,7 @@ fn should_publish_snapshot(
             warning: ConnectionTransportWarning::TcpGapReset { .. }
                 | ConnectionTransportWarning::TcpGapTimeoutReset { .. }
                 | ConnectionTransportWarning::D2gsFramingReset { .. }
+                | ConnectionTransportWarning::D2gsSessionReset { .. }
         }
     )
 }
@@ -260,6 +261,9 @@ fn resource_stat_label(attribute: u8) -> Option<&'static str> {
 
 fn log_transport_warning(warning: &ConnectionTransportWarning) {
     match warning {
+        ConnectionTransportWarning::D2gsSessionReset { reason } => {
+            info!(?reason, "reset D2GS game state after TCP session boundary")
+        }
         ConnectionTransportWarning::DuplicateTcpSegment {
             sequence,
             len,
