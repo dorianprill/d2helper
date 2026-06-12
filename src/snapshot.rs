@@ -11,16 +11,15 @@ use libd2::core::entity::Entity;
 use libd2::core::game_state::MapTile;
 use libd2::{
     Area, CharacterExportOptions, CharacterFile, ConnectionEvent, ConnectionTransportWarning,
-    Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, Player, ServerMessageParseError,
-    UnitStat,
+    Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, PartyAffiliation, Player,
+    ServerMessageParseError, UnitStat,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
 pub type SharedOverlayState = std::sync::Arc<std::sync::RwLock<OverlaySnapshot>>;
 
 /// Immutable, render-ready view of the latest known game and capture state.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OverlaySnapshot {
     /// Packet-capture lifecycle and event counters.
     pub capture: CaptureSnapshot,
@@ -44,7 +43,6 @@ pub struct OverlaySnapshot {
     /// rich enough for `libd2`'s legacy save export.
     pub character_export: Option<CharacterExportSnapshot>,
 }
-
 
 impl OverlaySnapshot {
     /// Copies the currently decoded game state into a UI snapshot.
@@ -81,11 +79,15 @@ impl OverlaySnapshot {
             .map(|(id, player)| {
                 let location = player.location();
                 let is_local = game_state.local_player_id() == Some(*id);
-                let area_id = player.area_id().or_else(|| {
-                    (is_local || player.world_location_known())
-                        .then_some(game_state.map().area_id)
-                        .flatten()
-                });
+                let remote_party_info = player.remote_party_info();
+                let area_id = remote_party_info
+                    .and_then(|info| info.area_id())
+                    .or_else(|| player.area_id())
+                    .or_else(|| {
+                        (is_local || player.world_location_known())
+                            .then_some(game_state.map().area_id)
+                            .flatten()
+                    });
                 PlayerSnapshot {
                     id: *id,
                     name: player.name().to_owned(),
@@ -96,6 +98,10 @@ impl OverlaySnapshot {
                     area_name: area_id.map(|area_id| display_area_name(area_id, game_data)),
                     world_location_known: player.world_location_known(),
                     is_local,
+                    party_affiliation: player.party_affiliation(),
+                    party_life: remote_party_info
+                        .and_then(|info| info.life())
+                        .map(|life| life.raw()),
                     life: player_life_value(player),
                     life_max: player.stat(UnitStat::LifeMax as u16),
                     mana: player_mana_value(player),
@@ -108,6 +114,10 @@ impl OverlaySnapshot {
             })
             .collect();
         sort_player_snapshots(&mut players);
+        let player_party_affiliations: HashMap<_, _> = players
+            .iter()
+            .map(|player| (player.id, player.party_affiliation))
+            .collect();
 
         let npcs = game_state
             .npcs()
@@ -139,6 +149,10 @@ impl OverlaySnapshot {
                     class_id: mercenary.class_id(),
                     class_name: mercenary.class().map(|class| class.to_string()),
                     owner_id: mercenary.owner_id(),
+                    party_affiliation: player_party_affiliations
+                        .get(&mercenary.owner_id())
+                        .copied()
+                        .unwrap_or(PartyAffiliation::Unknown),
                     skill_id: mercenary.skill_id(),
                     world_location_known: mercenary.world_location_known(),
                     life_percent: mercenary.life_percent(),
@@ -565,6 +579,9 @@ pub struct PlayerSnapshot {
     pub area_name: Option<String>,
     pub world_location_known: bool,
     pub is_local: bool,
+    pub party_affiliation: PartyAffiliation,
+    /// Remote party-member life fraction in Diablo II's 0..=128 scale.
+    pub party_life: Option<u8>,
     /// Current life in raw Diablo II packet/stat units.
     ///
     /// The local player usually gets this from `0x18`/`0x95` resource packets.
@@ -597,6 +614,10 @@ impl PlayerSnapshot {
         self.world_location_known || (self.is_local && (self.x != 0 || self.y != 0))
     }
 
+    pub fn is_party_life_fraction(&self) -> bool {
+        !self.is_local && self.party_life.is_some()
+    }
+
     fn distance_to(&self, x: u16, y: u16) -> u16 {
         coordinate_distance(self.x, self.y, x, y)
     }
@@ -621,6 +642,7 @@ pub struct MercenarySnapshot {
     pub class_id: u16,
     pub class_name: Option<String>,
     pub owner_id: u32,
+    pub party_affiliation: PartyAffiliation,
     pub skill_id: u8,
     pub world_location_known: bool,
     pub life_percent: Option<u8>,
@@ -978,6 +1000,7 @@ mod tests {
         assert_eq!(player.life_max, Some(1280));
         assert_eq!(player.mana, Some(320));
         assert_eq!(player.mana_max, Some(960));
+        assert_eq!(player.party_affiliation, PartyAffiliation::Unpartied);
     }
 
     #[test]
@@ -1006,8 +1029,9 @@ mod tests {
             .find(|player| player.id == 7)
             .expect("remote player snapshot");
 
-        assert_eq!(player.life, Some(87));
-        assert_eq!(player.life_max, Some(100));
+        assert_eq!(player.party_life, Some(87));
+        assert_eq!(player.life, None);
+        assert_eq!(player.life_max, None);
         assert_eq!(player.area_name.as_deref(), Some("Blood Moor"));
         assert!(!player.world_location_known);
     }
@@ -1025,6 +1049,10 @@ mod tests {
         assert!(state.update(libd2::ServerMessage::GameHandshake {
             unit_type: 0,
             unit_id: 7,
+        }));
+        assert!(state.update(libd2::ServerMessage::AssignPlayerToParty {
+            player_id: 7,
+            party_id: 0x1234,
         }));
         assert!(state.update(libd2::ServerMessage::AssignMerc {
             skill_id: 0x0A,
@@ -1087,6 +1115,10 @@ mod tests {
             .expect("mercenary snapshot");
         assert_eq!(mercenary.class_name.as_deref(), Some("Desert Mercenary"));
         assert_eq!(mercenary.owner_id, 7);
+        assert_eq!(
+            mercenary.party_affiliation,
+            PartyAffiliation::Party(libd2::PartyId::new(0x1234))
+        );
         assert_eq!(mercenary.skill_id, 0x0A);
         assert!(mercenary.world_location_known);
         assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
@@ -1219,6 +1251,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: false,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1238,6 +1272,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: Some(1000),
             life_max: Some(2000),
             mana: Some(500),
@@ -1268,6 +1304,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1306,6 +1344,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: false,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1331,6 +1371,8 @@ mod tests {
             area_name: None,
             world_location_known: false,
             is_local: false,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1361,6 +1403,8 @@ mod tests {
             area_name: None,
             world_location_known: false,
             is_local,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
