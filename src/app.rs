@@ -5,6 +5,7 @@
 //! tool without coupling rendering directly to packet parsing.
 
 use std::{
+    collections::HashMap,
     fs, io,
     path::{Path, PathBuf},
     time::Duration,
@@ -12,6 +13,7 @@ use std::{
 
 use directories::UserDirs;
 use eframe::egui::{self, Color32, RichText};
+use libd2::{PartyAffiliation, PartyId};
 use tracing::{info, warn};
 
 use crate::capture::CaptureHandle;
@@ -42,7 +44,7 @@ impl D2HelperApp {
             capture,
             background_opacity: 255,
             decorations_enabled: true,
-            maximized: false,
+            maximized: true,
             download_status: None,
         }
     }
@@ -196,56 +198,128 @@ fn draw_character_panel(
         return None;
     }
 
+    let party_colors = PartyColorMap::from_players(&snapshot.players);
     for player in &snapshot.players {
-        ui.group(|ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let label = if player.is_local {
-                    format!("{}  local", player.name)
-                } else {
-                    player.name.clone()
-                };
-                let name_text = if player.is_local {
-                    RichText::new(label)
-                        .strong()
-                        .color(Color32::from_rgb(210, 112, 32))
-                } else {
-                    RichText::new(label).strong()
-                };
-                let name_width = (ui.available_width() - 160.0).max(80.0);
-                ui.add_sized([name_width, 20.0], egui::Label::new(name_text).truncate());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_enabled(false, egui::Button::new("Inspect"));
-                    let can_download = player.is_local && snapshot.character_export.is_some();
-                    if ui
-                        .add_enabled(can_download, egui::Button::new("Download"))
-                        .clicked()
-                    {
-                        let export = snapshot
-                            .character_export
-                            .as_ref()
-                            .expect("enabled download requires export payload");
-                        download_status = Some(download_character(export));
-                    }
+        egui::Frame::group(ui.style())
+            .fill(party_colors.row_fill(player.party_affiliation))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    let label = if player.is_local {
+                        format!("{}  local", player.name)
+                    } else {
+                        player.name.clone()
+                    };
+                    let name_text = if player.is_local {
+                        RichText::new(label)
+                            .strong()
+                            .color(Color32::from_rgb(210, 112, 32))
+                    } else {
+                        RichText::new(label).strong()
+                    };
+                    let name_width = (ui.available_width() - 160.0).max(80.0);
+                    ui.add_sized([name_width, 20.0], egui::Label::new(name_text).truncate());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_enabled(false, egui::Button::new("Inspect"));
+                        if player.is_local {
+                            let can_download = snapshot.character_export.is_some();
+                            if ui
+                                .add_enabled(can_download, egui::Button::new("Download"))
+                                .clicked()
+                            {
+                                let export = snapshot
+                                    .character_export
+                                    .as_ref()
+                                    .expect("enabled download requires export payload");
+                                download_status = Some(download_character(export));
+                            }
+                        }
+                    });
                 });
+                ui.horizontal(|ui| {
+                    ui.label(&player.class_name);
+                    ui.separator();
+                    ui.label(level_label(player.level));
+                    ui.separator();
+                    ui.label(party_label(&party_colors, player.party_affiliation));
+                    ui.separator();
+                    ui.label(area_label(player));
+                    ui.separator();
+                    ui.label(format!("id {}", player.id));
+                    ui.separator();
+                    ui.label(position_label(player));
+                });
+                draw_resource_values(ui, player);
+                for mercenary in snapshot
+                    .mercenaries
+                    .iter()
+                    .filter(|mercenary| mercenary.owner_id == player.id)
+                {
+                    draw_mercenary_row(ui, mercenary);
+                }
             });
-            ui.horizontal(|ui| {
-                ui.label(&player.class_name);
-                ui.separator();
-                ui.label(level_label(player.level));
-                ui.separator();
-                ui.label(area_label(player));
-                ui.separator();
-                ui.label(format!("id {}", player.id));
-                ui.separator();
-                ui.label(position_label(player));
-            });
-            draw_resource_values(ui, player);
-        });
         ui.add_space(4.0);
     }
 
     download_status
+}
+
+#[derive(Debug, Default)]
+struct PartyColorMap {
+    indices: HashMap<PartyId, usize>,
+}
+
+impl PartyColorMap {
+    fn from_players(players: &[crate::snapshot::PlayerSnapshot]) -> Self {
+        let mut indices = HashMap::new();
+        for player in players {
+            let PartyAffiliation::Party(party_id) = player.party_affiliation else {
+                continue;
+            };
+            let next_index = indices.len();
+            indices.entry(party_id).or_insert(next_index);
+        }
+
+        Self { indices }
+    }
+
+    fn row_fill(&self, party_affiliation: PartyAffiliation) -> Color32 {
+        match party_affiliation {
+            PartyAffiliation::Unknown => Color32::from_rgb(14, 14, 16),
+            PartyAffiliation::Unpartied => Color32::from_rgb(0, 0, 0),
+            PartyAffiliation::Party(party_id) => self
+                .indices
+                .get(&party_id)
+                .map(|index| party_row_color(*index))
+                .unwrap_or_else(|| Color32::from_rgb(14, 14, 16)),
+        }
+    }
+
+    fn party_number(&self, party_id: PartyId) -> Option<usize> {
+        self.indices.get(&party_id).map(|index| index + 1)
+    }
+}
+
+fn party_row_color(index: usize) -> Color32 {
+    match index % 6 {
+        0 => Color32::from_rgb(2, 28, 13),
+        1 => Color32::from_rgb(5, 15, 38),
+        2 => Color32::from_rgb(40, 5, 8),
+        3 => Color32::from_rgb(29, 15, 43),
+        4 => Color32::from_rgb(3, 31, 31),
+        _ => Color32::from_rgb(39, 28, 7),
+    }
+}
+
+fn party_label(colors: &PartyColorMap, party_affiliation: PartyAffiliation) -> String {
+    match party_affiliation {
+        PartyAffiliation::Unknown => "party --".to_owned(),
+        PartyAffiliation::Unpartied => "unpartied".to_owned(),
+        PartyAffiliation::Party(party_id) => colors
+            .party_number(party_id)
+            .map(|number| format!("party {number}"))
+            .unwrap_or_else(|| "party --".to_owned()),
+    }
 }
 
 fn download_character(export: &CharacterExportSnapshot) -> DownloadStatus {
@@ -359,41 +433,49 @@ fn draw_resource_values(ui: &mut egui::Ui, player: &crate::snapshot::PlayerSnaps
     ui.horizontal_wrapped(|ui| {
         ui.colored_label(
             Color32::from_rgb(220, 80, 85),
-            format!("HP {}", raw_value_label(player.life)),
+            format!("HP {}", player_life_label(player)),
         );
-        ui.colored_label(
-            Color32::from_rgb(90, 130, 240),
-            format!("MP {}", raw_value_label(player.mana)),
-        );
-        if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
-            ui.label(format!("regen {life_regen}/{mana_regen}"));
-        }
-        if let (Some(dx), Some(dy)) = (player.movement_dx, player.movement_dy) {
-            ui.label(format!("move {dx},{dy}"));
+        if player.is_local {
+            ui.colored_label(
+                Color32::from_rgb(90, 130, 240),
+                format!("MP {}", resource_value_label(player.mana, player.mana_max)),
+            );
+            if let (Some(life_regen), Some(mana_regen)) = (player.life_regen, player.mana_regen) {
+                ui.label(format!("regen {life_regen}/{mana_regen}"));
+            }
+            if let (Some(dx), Some(dy)) = (player.movement_dx, player.movement_dy) {
+                ui.label(format!("move {dx},{dy}"));
+            }
         }
     });
 
     let width = ui.available_width();
     let height = 8.0;
-    let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(width, height * 2.0 + 2.0), egui::Sense::hover());
+    let bar_count = if player.is_local { 2.0 } else { 1.0 };
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(width, height * bar_count + 2.0 * (bar_count - 1.0)),
+        egui::Sense::hover(),
+    );
+    let (life, life_max) = player_life_bar_values(player);
     draw_resource_bar(
         ui,
         egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
-        player.life,
-        player.life_max,
+        life,
+        life_max,
         Color32::from_rgb(120, 30, 35),
     );
-    draw_resource_bar(
-        ui,
-        egui::Rect::from_min_size(
-            rect.min + egui::vec2(0.0, height + 2.0),
-            egui::vec2(width, height),
-        ),
-        player.mana,
-        player.mana_max,
-        Color32::from_rgb(35, 55, 135),
-    );
+    if player.is_local {
+        draw_resource_bar(
+            ui,
+            egui::Rect::from_min_size(
+                rect.min + egui::vec2(0.0, height + 2.0),
+                egui::vec2(width, height),
+            ),
+            player.mana,
+            player.mana_max,
+            Color32::from_rgb(35, 55, 135),
+        );
+    }
 }
 
 fn draw_resource_bar(
@@ -413,31 +495,157 @@ fn draw_resource_bar(
     ui.painter().rect_filled(filled, 2.0, color);
 }
 
+fn draw_mercenary_row(ui: &mut egui::Ui, mercenary: &crate::snapshot::MercenarySnapshot) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Merc").color(Color32::from_rgb(120, 230, 150)));
+        ui.label(mercenary_label(mercenary));
+        if let Some(level) = mercenary.level {
+            ui.separator();
+            ui.label(level_label(level));
+        }
+        ui.separator();
+        ui.colored_label(
+            Color32::from_rgb(220, 80, 85),
+            format!(
+                "HP {}",
+                mercenary_life_label(mercenary.life, mercenary.life_max, mercenary.life_percent)
+            ),
+        );
+        if let Some(revive_cost) = mercenary.revive_cost {
+            ui.separator();
+            ui.label(format!("revive {revive_cost}g"));
+        }
+        ui.separator();
+        ui.label(mercenary_position_label(mercenary));
+    });
+    let (life, life_max) =
+        mercenary_life_bar_values(mercenary.life, mercenary.life_max, mercenary.life_percent);
+    let width = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 6.0), egui::Sense::hover());
+    draw_resource_bar(ui, rect, life, life_max, Color32::from_rgb(120, 30, 35));
+}
+
+fn mercenary_label(mercenary: &crate::snapshot::MercenarySnapshot) -> String {
+    mercenary
+        .class_name
+        .clone()
+        .unwrap_or_else(|| format!("class {}", mercenary.class_id))
+}
+
+fn mercenary_position_label(mercenary: &crate::snapshot::MercenarySnapshot) -> String {
+    if mercenary.world_location_known {
+        format!("@ {},{}", mercenary.x, mercenary.y)
+    } else {
+        "@ unknown".to_owned()
+    }
+}
+
 fn resource_bar_fraction(value: Option<u32>, max_value: Option<u32>) -> Option<f32> {
-    let value = value? as f32;
-    let max_value = normalized_resource_max(max_value?, value)?;
+    let (value, max_value) = normalized_resource_values(value?, max_value?)?;
     Some((value / max_value).clamp(0.0, 1.0))
 }
 
-fn normalized_resource_max(max_value: u32, current_value: f32) -> Option<f32> {
+fn normalized_resource_values(value: u32, max_value: u32) -> Option<(f32, f32)> {
     if max_value == 0 {
         return None;
     }
 
-    let raw_max = max_value as f32;
-    if current_value > raw_max {
-        let fixed_point_max = raw_max * 256.0;
-        if current_value <= fixed_point_max {
-            return Some(fixed_point_max);
+    if value > max_value {
+        let fixed_point_max = max_value.checked_mul(256)?;
+        if value <= fixed_point_max {
+            return Some((value as f32 / 256.0, max_value as f32));
         }
     }
-    Some(raw_max)
+
+    if max_value >= 256 && max_value % 256 == 0 {
+        let raw_max = max_value / 256;
+        if value <= raw_max {
+            return Some((value as f32, raw_max as f32));
+        }
+        if value % 256 == 0 {
+            return Some((value as f32 / 256.0, raw_max as f32));
+        }
+    }
+
+    Some((value as f32, max_value as f32))
 }
 
-fn raw_value_label(value: Option<u32>) -> String {
-    value
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "--".to_owned())
+fn resource_value_label(value: Option<u32>, max_value: Option<u32>) -> String {
+    let Some(value) = value else {
+        return "--".to_owned();
+    };
+    let Some(max_value) = max_value else {
+        return value.to_string();
+    };
+    let Some((value, max_value)) = normalized_resource_values(value, max_value) else {
+        return value.to_string();
+    };
+    format!(
+        "{}/{}",
+        resource_number_label(value),
+        resource_number_label(max_value)
+    )
+}
+
+fn mercenary_life_label(
+    life: Option<u32>,
+    life_max: Option<u32>,
+    life_percent: Option<u8>,
+) -> String {
+    if life.is_some() {
+        resource_value_label(life, life_max)
+    } else {
+        life_percent
+            .map(|life| format!("{life}%"))
+            .unwrap_or_else(|| "--".to_owned())
+    }
+}
+
+fn mercenary_life_bar_values(
+    life: Option<u32>,
+    life_max: Option<u32>,
+    life_percent: Option<u8>,
+) -> (Option<u32>, Option<u32>) {
+    if life.is_some() {
+        (life, life_max)
+    } else {
+        (life_percent.map(u32::from), life_percent.map(|_| 100))
+    }
+}
+
+fn player_life_label(player: &crate::snapshot::PlayerSnapshot) -> String {
+    if player.is_party_life_fraction() {
+        return player
+            .party_life
+            .map(|life| party_life_label(u16::from(life)))
+            .unwrap_or_else(|| "--".to_owned());
+    }
+
+    resource_value_label(player.life, player.life_max)
+}
+
+fn player_life_bar_values(player: &crate::snapshot::PlayerSnapshot) -> (Option<u32>, Option<u32>) {
+    if let Some(party_life) = player.party_life {
+        (Some(u32::from(party_life)), Some(128))
+    } else {
+        (player.life, player.life_max)
+    }
+}
+
+fn party_life_label(value: u16) -> String {
+    format!(
+        "{}%",
+        ((value.min(128) as f32 / 128.0) * 100.0).round() as u32
+    )
+}
+
+fn resource_number_label(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.05 {
+        format!("{}", rounded as u32)
+    } else {
+        format!("{value:.1}")
+    }
 }
 
 fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapshot) {
@@ -476,6 +684,10 @@ fn draw_status_bar(ui: &mut egui::Ui, snapshot: &crate::snapshot::OverlaySnapsho
         ui.label(format!("players {}", snapshot.players.len()));
         ui.separator();
         ui.label(format!("npcs {}", snapshot.npcs.len()));
+        ui.separator();
+        ui.label(format!("mercs {}", snapshot.mercenaries.len()));
+        ui.separator();
+        ui.label(format!("missiles {}", snapshot.missiles.len()));
         ui.separator();
         ui.label(format!("items {}", snapshot.items.len()));
         ui.separator();
@@ -543,8 +755,61 @@ mod tests {
     }
 
     #[test]
+    fn resource_fraction_accepts_raw_current_with_fixed_point_max() {
+        assert_eq!(resource_bar_fraction(Some(10), Some(2560)), Some(1.0));
+    }
+
+    #[test]
     fn resource_fraction_is_unknown_without_maximum() {
         assert_eq!(resource_bar_fraction(Some(1280), None), None);
+    }
+
+    #[test]
+    fn resource_labels_normalize_fixed_point_values() {
+        assert_eq!(resource_value_label(Some(1280), Some(10)), "5/10");
+        assert_eq!(resource_value_label(Some(10), Some(2560)), "10/10");
+        assert_eq!(resource_value_label(Some(1280), Some(2560)), "5/10");
+    }
+
+    #[test]
+    fn party_life_label_converts_128_scale_to_percent() {
+        assert_eq!(party_life_label(128), "100%");
+        assert_eq!(party_life_label(64), "50%");
+        assert_eq!(party_life_label(200), "100%");
+    }
+
+    #[test]
+    fn player_life_bar_uses_party_life_fraction_for_remote_players() {
+        let mut player = player_snapshot_with_party(1, PartyAffiliation::Unpartied);
+        player.party_life = Some(64);
+
+        assert_eq!(player_life_bar_values(&player), (Some(64), Some(128)));
+    }
+
+    #[test]
+    fn party_color_map_assigns_colors_by_first_seen_party_id() {
+        let first = PartyId::new(0x2200);
+        let second = PartyId::new(0x1100);
+        let players = vec![
+            player_snapshot_with_party(1, PartyAffiliation::Party(first)),
+            player_snapshot_with_party(2, PartyAffiliation::Party(first)),
+            player_snapshot_with_party(3, PartyAffiliation::Party(second)),
+        ];
+
+        let colors = PartyColorMap::from_players(&players);
+
+        assert_eq!(
+            colors.row_fill(PartyAffiliation::Party(first)),
+            party_row_color(0)
+        );
+        assert_eq!(
+            colors.row_fill(PartyAffiliation::Party(second)),
+            party_row_color(1)
+        );
+        assert_eq!(
+            colors.row_fill(PartyAffiliation::Unpartied),
+            Color32::from_rgb(0, 0, 0)
+        );
     }
 
     #[test]
@@ -585,5 +850,32 @@ mod tests {
             default_download_directory(None, Some(home_dir)),
             Some(home_dir.join("Downloads"))
         );
+    }
+
+    fn player_snapshot_with_party(
+        id: u32,
+        party_affiliation: PartyAffiliation,
+    ) -> crate::snapshot::PlayerSnapshot {
+        crate::snapshot::PlayerSnapshot {
+            id,
+            name: format!("Player{id}"),
+            class_name: "Paladin".to_owned(),
+            level: 1,
+            x: 0,
+            y: 0,
+            area_name: None,
+            world_location_known: false,
+            is_local: false,
+            party_affiliation,
+            party_life: None,
+            life: None,
+            life_max: None,
+            mana: None,
+            mana_max: None,
+            life_regen: None,
+            mana_regen: None,
+            movement_dx: None,
+            movement_dy: None,
+        }
     }
 }

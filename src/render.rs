@@ -45,6 +45,8 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
     draw_objects(&painter, &projector, snapshot);
     draw_items(&painter, &projector, snapshot);
     draw_npcs(&painter, &projector, snapshot);
+    draw_mercenaries(&painter, &projector, snapshot);
+    draw_missiles(&painter, &projector, snapshot);
     draw_players(&painter, &projector, snapshot);
     draw_focus_label(&painter, rect, focus);
 }
@@ -52,7 +54,7 @@ pub fn render_automap(ui: &mut egui::Ui, snapshot: &OverlaySnapshot) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::RevealedTileSnapshot;
+    use crate::snapshot::{ObjectSnapshot, RevealedTileSnapshot};
 
     #[test]
     fn iso_projection_keeps_center_on_rect_center() {
@@ -112,6 +114,31 @@ mod tests {
     fn local_axis_range_clamps_visible_world_to_generated_map_bounds() {
         assert_eq!(local_axis_range(5200, 5250, 5190, 40), Some((10, 39)));
         assert_eq!(local_axis_range(5100, 5110, 5190, 40), None);
+    }
+
+    #[test]
+    fn object_filter_hides_only_exact_dummy_names() {
+        let mut object = ObjectSnapshot {
+            id: 1,
+            class_id: 1,
+            name: Some("Dummy".to_owned()),
+            object_type: 0,
+            state: 0,
+            portal_flags: None,
+            is_targetable: None,
+            x: 0,
+            y: 0,
+        };
+        assert!(object_is_hidden_on_map(&object));
+
+        object.name = Some("DummyS2".to_owned());
+        assert!(object_is_hidden_on_map(&object));
+
+        object.name = Some("DummyS3".to_owned());
+        assert!(!object_is_hidden_on_map(&object));
+
+        object.name = None;
+        assert!(!object_is_hidden_on_map(&object));
     }
 }
 
@@ -286,6 +313,83 @@ fn draw_npcs(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnap
     }
 }
 
+fn draw_mercenaries(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
+    for mercenary in &snapshot.mercenaries {
+        if !mercenary.world_location_known {
+            continue;
+        }
+        let position = projector.project(mercenary.x, mercenary.y);
+        if !projector.rect.expand(48.0).contains(position) {
+            continue;
+        }
+        let life = mercenary.life_percent.unwrap_or(100);
+        let color = if life < 35 {
+            Color32::from_rgb(170, 120, 55)
+        } else {
+            Color32::from_rgb(95, 210, 130)
+        };
+        painter.circle_stroke(position, 5.0, Stroke::new(1.5_f32, color));
+        painter.circle_filled(position, 2.5, color);
+
+        let label = mercenary
+            .class_name
+            .as_deref()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("Merc {}", mercenary.class_id));
+        painter.text(
+            position + Vec2::new(7.0, -13.0),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(9.0),
+            Color32::from_rgb(180, 255, 195),
+        );
+
+        let _ = (mercenary.id, mercenary.skill_id, mercenary.experience);
+    }
+}
+
+fn draw_missiles(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
+    for missile in &snapshot.missiles {
+        let position = projector.project(missile.x, missile.y);
+        if !projector.rect.expand(48.0).contains(position) {
+            continue;
+        }
+        if let (Some(target_x), Some(target_y)) = (missile.target_x, missile.target_y) {
+            let target = projector.project(target_x, target_y);
+            painter.line_segment(
+                [position, target],
+                Stroke::new(0.8_f32, Color32::from_rgba_unmultiplied(255, 205, 85, 140)),
+            );
+        }
+
+        let color = Color32::from_rgb(255, 210, 90);
+        painter.add(Shape::convex_polygon(
+            diamond(position, 3.5, 3.5),
+            color,
+            Stroke::new(0.8_f32, Color32::from_rgb(80, 55, 20)),
+        ));
+
+        if let Some(class_id) = missile.class_id {
+            painter.text(
+                position + Vec2::new(5.0, 7.0),
+                egui::Align2::LEFT_CENTER,
+                format!("P{class_id}"),
+                egui::FontId::monospace(8.0),
+                Color32::from_rgb(255, 225, 130),
+            );
+        }
+
+        let _ = (
+            missile.id,
+            missile.current_frame,
+            missile.owner_type,
+            missile.owner_id,
+            missile.skill_level,
+            missile.pierce_level,
+        );
+    }
+}
+
 fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for item in &snapshot.items {
         let _ = (
@@ -337,6 +441,9 @@ fn draw_items(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySna
 
 fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlaySnapshot) {
     for object in &snapshot.objects {
+        if object_is_hidden_on_map(object) {
+            continue;
+        }
         let position = projector.project(object.x, object.y);
         if !projector.rect.expand(32.0).contains(position) {
             continue;
@@ -378,6 +485,13 @@ fn draw_objects(painter: &Painter, projector: &IsoProjector, snapshot: &OverlayS
 
         let _ = (object.id, object.class_id, object.object_type);
     }
+}
+
+fn object_is_hidden_on_map(object: &crate::snapshot::ObjectSnapshot) -> bool {
+    matches!(
+        object.name.as_deref().map(str::trim),
+        Some("Dummy" | "DummyS2")
+    )
 }
 
 fn draw_focus_label(painter: &Painter, rect: Rect, focus: MapFocus) {

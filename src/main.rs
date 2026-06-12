@@ -23,7 +23,8 @@ fn main() -> eframe::Result<()> {
         .with_title("d2helper")
         .with_decorations(true)
         .with_transparent(true)
-        .with_inner_size([1120.0, 720.0]);
+        .with_inner_size([1120.0, 720.0])
+        .with_maximized(true);
 
     let options = eframe::NativeOptions {
         viewport,

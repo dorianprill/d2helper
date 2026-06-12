@@ -11,16 +11,15 @@ use libd2::core::entity::Entity;
 use libd2::core::game_state::MapTile;
 use libd2::{
     Area, CharacterExportOptions, CharacterFile, ConnectionEvent, ConnectionTransportWarning,
-    Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, Player, ServerMessageParseError,
-    UnitStat,
+    Difficulty, GameData, GameState, GeneratedMap, ItemPlacement, PartyAffiliation, Player,
+    ServerMessageParseError, UnitStat,
 };
 
 /// Shared state boundary between the blocking packet-capture worker and egui.
 pub type SharedOverlayState = std::sync::Arc<std::sync::RwLock<OverlaySnapshot>>;
 
 /// Immutable, render-ready view of the latest known game and capture state.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct OverlaySnapshot {
     /// Packet-capture lifecycle and event counters.
     pub capture: CaptureSnapshot,
@@ -30,6 +29,10 @@ pub struct OverlaySnapshot {
     pub players: Vec<PlayerSnapshot>,
     /// Known monster and NPC units.
     pub npcs: Vec<NpcSnapshot>,
+    /// Known mercenary units assigned to players.
+    pub mercenaries: Vec<MercenarySnapshot>,
+    /// Known missile/projectile units.
+    pub missiles: Vec<MissileSnapshot>,
     /// Known map objects such as portals, shrines, chests, and waypoints.
     pub objects: Vec<ObjectSnapshot>,
     /// Known items. Only ground items have world coordinates.
@@ -40,7 +43,6 @@ pub struct OverlaySnapshot {
     /// rich enough for `libd2`'s legacy save export.
     pub character_export: Option<CharacterExportSnapshot>,
 }
-
 
 impl OverlaySnapshot {
     /// Copies the currently decoded game state into a UI snapshot.
@@ -71,17 +73,21 @@ impl OverlaySnapshot {
         game_data: Option<&GameData>,
         generated_map: Option<Arc<GeneratedMap>>,
     ) -> Self {
-        let current_area_name = game_state
-            .map()
-            .area_id
-            .map(|area_id| display_area_name(area_id, game_data));
-
         let mut players: Vec<_> = game_state
             .players()
             .iter()
             .map(|(id, player)| {
                 let location = player.location();
                 let is_local = game_state.local_player_id() == Some(*id);
+                let remote_party_info = player.remote_party_info();
+                let area_id = remote_party_info
+                    .and_then(|info| info.area_id())
+                    .or_else(|| player.area_id())
+                    .or_else(|| {
+                        (is_local || player.world_location_known())
+                            .then_some(game_state.map().area_id)
+                            .flatten()
+                    });
                 PlayerSnapshot {
                     id: *id,
                     name: player.name().to_owned(),
@@ -89,13 +95,13 @@ impl OverlaySnapshot {
                     level: player.level(),
                     x: location.x(),
                     y: location.y(),
-                    area_name: if is_local || player.world_location_known() {
-                        current_area_name.clone()
-                    } else {
-                        None
-                    },
+                    area_name: area_id.map(|area_id| display_area_name(area_id, game_data)),
                     world_location_known: player.world_location_known(),
                     is_local,
+                    party_affiliation: player.party_affiliation(),
+                    party_life: remote_party_info
+                        .and_then(|info| info.life())
+                        .map(|life| life.raw()),
                     life: player_life_value(player),
                     life_max: player.stat(UnitStat::LifeMax as u16),
                     mana: player_mana_value(player),
@@ -108,7 +114,6 @@ impl OverlaySnapshot {
             })
             .collect();
         sort_player_snapshots(&mut players);
-
         let npcs = game_state
             .npcs()
             .iter()
@@ -125,6 +130,52 @@ impl OverlaySnapshot {
                     state: npc.state(),
                     x: location.x(),
                     y: location.y(),
+                }
+            })
+            .collect();
+
+        let mercenaries = game_state
+            .mercenaries()
+            .iter()
+            .map(|(id, mercenary)| {
+                let location = mercenary.location();
+                MercenarySnapshot {
+                    id: *id,
+                    class_id: mercenary.class_id(),
+                    class_name: mercenary.class().map(|class| class.to_string()),
+                    owner_id: mercenary.owner_id(),
+                    skill_id: mercenary.skill_id(),
+                    world_location_known: mercenary.world_location_known(),
+                    life_percent: mercenary.life_percent(),
+                    life: mercenary.stat(UnitStat::Life as u16),
+                    life_max: mercenary.stat(UnitStat::LifeMax as u16),
+                    level: mercenary.stat(UnitStat::Level as u16),
+                    experience: mercenary.stat(UnitStat::Experience as u16),
+                    revive_cost: mercenary.revive_cost(),
+                    x: location.x(),
+                    y: location.y(),
+                }
+            })
+            .collect();
+
+        let missiles = game_state
+            .missiles()
+            .iter()
+            .map(|(id, missile)| {
+                let location = missile.location();
+                let target = missile.target();
+                MissileSnapshot {
+                    id: *id,
+                    class_id: missile.class_id(),
+                    x: location.x(),
+                    y: location.y(),
+                    target_x: target.map(|target| target.x()),
+                    target_y: target.map(|target| target.y()),
+                    current_frame: missile.current_frame(),
+                    owner_type: missile.owner_type(),
+                    owner_id: missile.owner_id(),
+                    skill_level: missile.skill_level(),
+                    pierce_level: missile.pierce_level(),
                 }
             })
             .collect();
@@ -186,6 +237,8 @@ impl OverlaySnapshot {
             game: GameSnapshot::from_game_state(game_state),
             players,
             npcs,
+            mercenaries,
+            missiles,
             objects,
             items,
             generated_map,
@@ -204,6 +257,17 @@ impl OverlaySnapshot {
         }
         for npc in &self.npcs {
             bounds.add(npc.x, npc.y);
+        }
+        for mercenary in &self.mercenaries {
+            if mercenary.world_location_known {
+                bounds.add(mercenary.x, mercenary.y);
+            }
+        }
+        for missile in &self.missiles {
+            bounds.add(missile.x, missile.y);
+            if let (Some(x), Some(y)) = (missile.target_x, missile.target_y) {
+                bounds.add(x, y);
+            }
         }
         for object in &self.objects {
             bounds.add(object.x, object.y);
@@ -296,6 +360,14 @@ impl OverlaySnapshot {
         }
         for npc in &self.npcs {
             bounds.add(npc.x, npc.y);
+        }
+        for mercenary in &self.mercenaries {
+            if mercenary.world_location_known {
+                bounds.add(mercenary.x, mercenary.y);
+            }
+        }
+        for missile in &self.missiles {
+            bounds.add(missile.x, missile.y);
         }
         for object in &self.objects {
             bounds.add(object.x, object.y);
@@ -498,6 +570,9 @@ pub struct PlayerSnapshot {
     pub area_name: Option<String>,
     pub world_location_known: bool,
     pub is_local: bool,
+    pub party_affiliation: PartyAffiliation,
+    /// Remote party-member life fraction in Diablo II's 0..=128 scale.
+    pub party_life: Option<u8>,
     /// Current life in raw Diablo II packet/stat units.
     ///
     /// The local player usually gets this from `0x18`/`0x95` resource packets.
@@ -530,6 +605,10 @@ impl PlayerSnapshot {
         self.world_location_known || (self.is_local && (self.x != 0 || self.y != 0))
     }
 
+    pub fn is_party_life_fraction(&self) -> bool {
+        !self.is_local && self.party_life.is_some()
+    }
+
     fn distance_to(&self, x: u16, y: u16) -> u16 {
         coordinate_distance(self.x, self.y, x, y)
     }
@@ -545,6 +624,41 @@ pub struct NpcSnapshot {
     pub state: Option<u8>,
     pub x: u16,
     pub y: u16,
+}
+
+/// Mercenary unit data needed by the character list and map markers.
+#[derive(Debug, Clone)]
+pub struct MercenarySnapshot {
+    pub id: u32,
+    pub class_id: u16,
+    pub class_name: Option<String>,
+    pub owner_id: u32,
+    pub skill_id: u8,
+    pub world_location_known: bool,
+    pub life_percent: Option<u8>,
+    pub life: Option<u32>,
+    pub life_max: Option<u32>,
+    pub level: Option<u32>,
+    pub experience: Option<u32>,
+    pub revive_cost: Option<u16>,
+    pub x: u16,
+    pub y: u16,
+}
+
+/// Missile/projectile unit data needed by map markers.
+#[derive(Debug, Clone)]
+pub struct MissileSnapshot {
+    pub id: u32,
+    pub class_id: Option<u16>,
+    pub x: u16,
+    pub y: u16,
+    pub target_x: Option<u16>,
+    pub target_y: Option<u16>,
+    pub current_frame: Option<u16>,
+    pub owner_type: Option<u8>,
+    pub owner_id: Option<u32>,
+    pub skill_level: Option<u8>,
+    pub pierce_level: Option<u8>,
 }
 
 /// Object unit data needed by the map markers and counters.
@@ -876,6 +990,146 @@ mod tests {
         assert_eq!(player.life_max, Some(1280));
         assert_eq!(player.mana, Some(320));
         assert_eq!(player.mana_max, Some(960));
+        assert_eq!(player.party_affiliation, PartyAffiliation::Unpartied);
+    }
+
+    #[test]
+    fn remote_player_snapshot_uses_party_life_and_area_without_world_position() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2::ServerMessage::PlayerJoined {
+            packet_length: 36,
+            player_id: 7,
+            character_class: 1,
+            character_name: name16("Remote"),
+            character_level: 42,
+            party_id: 0xffff,
+            unknown: [0; 8],
+        }));
+        assert!(state.update(libd2::ServerMessage::AllyPartyInfo {
+            unit_type: 0,
+            unit_life: 87,
+            unit_id: 7,
+            unit_area: 2,
+        }));
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let player = snapshot
+            .players
+            .iter()
+            .find(|player| player.id == 7)
+            .expect("remote player snapshot");
+
+        assert_eq!(player.party_life, Some(87));
+        assert_eq!(player.life, None);
+        assert_eq!(player.life_max, None);
+        assert_eq!(player.area_name.as_deref(), Some("Blood Moor"));
+        assert!(!player.world_location_known);
+    }
+
+    #[test]
+    fn mercenary_and_missile_snapshots_copy_live_state() {
+        let mut state = GameState::default();
+        assert!(state.update(libd2::ServerMessage::AssignPlayer {
+            unit_id: 7,
+            class: 3,
+            szname: name16("Owner"),
+            x: 123,
+            y: 456,
+        }));
+        assert!(state.update(libd2::ServerMessage::GameHandshake {
+            unit_type: 0,
+            unit_id: 7,
+        }));
+        assert!(state.update(libd2::ServerMessage::AssignPlayerToParty {
+            player_id: 7,
+            party_id: 0x1234,
+        }));
+        assert!(state.update(libd2::ServerMessage::AssignMerc {
+            skill_id: 0x0A,
+            summon_type: 0x0152,
+            player_id: 7,
+            merc_id: 0x5566_7788,
+            seed2: 0x99AA_BBCC,
+            init_seed: 0xDDEE_FF00,
+        }));
+        assert!(state.update(libd2::ServerMessage::NpcStop {
+            unit_id: 0x5566_7788,
+            x: 5200,
+            y: 5100,
+            unit_life: 73,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU8 {
+            attribute: UnitStat::Level as u8,
+            merc_id: 0x5566_7788,
+            amount: 90,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+            attribute: UnitStat::Life as u8,
+            merc_id: 0x5566_7788,
+            amount: 1280,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAttributeU16 {
+            attribute: UnitStat::LifeMax as u8,
+            merc_id: 0x5566_7788,
+            amount: 2560,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercAddExpU16 {
+            stat_id: UnitStat::Experience as u8,
+            merc_id: 0x5566_7788,
+            value: 12,
+        }));
+        assert!(state.update(libd2::ServerMessage::MercReviveCost {
+            merc_name_id: 0x1234,
+            revive_cost: 0x5678,
+            unused: 0,
+        }));
+        assert!(state.update(libd2::ServerMessage::MissileData {
+            missile_id: 0x1020_3040,
+            missile_class: 0x009A,
+            missile_x: 5210,
+            missile_y: 5110,
+            target_x: 5220,
+            target_y: 5120,
+            current_frame: 7,
+            owner_type: 0,
+            owner_id: 7,
+            skill_level: 5,
+            pierce_level: 1,
+        }));
+
+        let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
+        let mercenary = snapshot
+            .mercenaries
+            .iter()
+            .find(|mercenary| mercenary.id == 0x5566_7788)
+            .expect("mercenary snapshot");
+        assert_eq!(mercenary.class_name.as_deref(), Some("Desert Mercenary"));
+        assert_eq!(mercenary.owner_id, 7);
+        assert_eq!(mercenary.skill_id, 0x0A);
+        assert!(mercenary.world_location_known);
+        assert_eq!((mercenary.x, mercenary.y), (5200, 5100));
+        assert_eq!(mercenary.life_percent, Some(73));
+        assert_eq!(mercenary.life, Some(1280));
+        assert_eq!(mercenary.life_max, Some(2560));
+        assert_eq!(mercenary.level, Some(90));
+        assert_eq!(mercenary.experience, Some(12));
+        assert_eq!(mercenary.revive_cost, Some(0x5678));
+
+        let missile = snapshot
+            .missiles
+            .iter()
+            .find(|missile| missile.id == 0x1020_3040)
+            .expect("missile snapshot");
+        assert_eq!(missile.class_id, Some(0x009A));
+        assert_eq!((missile.x, missile.y), (5210, 5110));
+        assert_eq!(
+            (missile.target_x, missile.target_y),
+            (Some(5220), Some(5120))
+        );
+        assert_eq!(missile.current_frame, Some(7));
+        assert_eq!(missile.owner_id, Some(7));
+        assert_eq!(missile.skill_level, Some(5));
+        assert_eq!(missile.pierce_level, Some(1));
     }
 
     #[test]
@@ -983,6 +1237,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: false,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1002,6 +1258,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: Some(1000),
             life_max: Some(2000),
             mana: Some(500),
@@ -1032,6 +1290,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: true,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1070,6 +1330,8 @@ mod tests {
             area_name: Some("Blood Moor".to_owned()),
             world_location_known: false,
             is_local: true,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1095,6 +1357,8 @@ mod tests {
             area_name: None,
             world_location_known: false,
             is_local: false,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
@@ -1125,6 +1389,8 @@ mod tests {
             area_name: None,
             world_location_known: false,
             is_local,
+            party_affiliation: PartyAffiliation::Unknown,
+            party_life: None,
             life: None,
             life_max: None,
             mana: None,
