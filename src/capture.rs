@@ -12,20 +12,23 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
+    time::{Duration, Instant},
 };
 
 use libd2::{
-    Client, ConnectionEvent, ConnectionTransportWarning, GameData, ServerMessage,
-    ServerMessageParseError, UnitStat,
+    CaptureInterfaceSelectionReason, Client, ConnectionEvent, ConnectionTransportWarning, GameData,
+    ServerMessage, ServerMessageParseError, UnitStat,
 };
-use pnet::datalink::{self, NetworkInterface};
-use tracing::{error, info, warn};
+use pnet::datalink;
+use tracing::{debug, error, info, warn};
 
 use crate::generated_map::GeneratedMapCache;
 use crate::snapshot::{
     CaptureCounters, CaptureSnapshot, OverlaySnapshot, SharedOverlayState, replace_capture,
     replace_snapshot,
 };
+
+const SNAPSHOT_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Handle used by the UI thread to start the capture worker once.
 pub struct CaptureHandle {
@@ -107,10 +110,18 @@ fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
         let mut counters = CaptureCounters::default();
         let game_data = load_static_game_data();
         let mut generated_maps = GeneratedMapCache::from_env();
+        let mut last_snapshot_publish = Instant::now() - SNAPSHOT_PUBLISH_INTERVAL;
 
         client.start_with_events(|event, game_state| {
             log_connection_event(&event);
             counters.record(&event);
+            let now = Instant::now();
+            let should_publish = should_publish_snapshot(&event, now, last_snapshot_publish);
+            if !should_publish {
+                return;
+            }
+            last_snapshot_publish = now;
+
             if !enabled.load(Ordering::Relaxed) {
                 replace_capture(&worker_shared, counters.snapshot(false));
                 return;
@@ -133,6 +144,25 @@ fn run_capture(shared: SharedOverlayState, enabled: Arc<AtomicBool>) {
     }
 }
 
+fn should_publish_snapshot(
+    event: &ConnectionEvent,
+    now: Instant,
+    last_snapshot_publish: Instant,
+) -> bool {
+    if now.saturating_duration_since(last_snapshot_publish) >= SNAPSHOT_PUBLISH_INTERVAL {
+        return true;
+    }
+
+    matches!(
+        event,
+        ConnectionEvent::TransportWarning {
+            warning: ConnectionTransportWarning::TcpGapReset { .. }
+                | ConnectionTransportWarning::TcpGapTimeoutReset { .. }
+                | ConnectionTransportWarning::D2gsFramingReset { .. }
+        }
+    )
+}
+
 fn log_connection_event(event: &ConnectionEvent) {
     match event {
         ConnectionEvent::ServerMessage {
@@ -140,7 +170,7 @@ fn log_connection_event(event: &ConnectionEvent) {
             message,
             applied,
         } => {
-            info!(
+            debug!(
                 packet_id = %format_args!("0x{:02X}", packet.packet_id()),
                 len = packet.data.len(),
                 applied,
@@ -185,7 +215,7 @@ fn log_server_message_details(message: &ServerMessage) {
             unit_id,
             unit_area,
         } => {
-            info!(
+            debug!(
                 unit_type,
                 unit_id, unit_life, unit_area, "parsed D2GS ally party info"
             );
@@ -196,7 +226,7 @@ fn log_server_message_details(message: &ServerMessage) {
             amount,
         } => {
             if let Some(stat_name) = resource_stat_label(*attribute) {
-                info!(
+                debug!(
                     unit_id,
                     attribute, stat_name, amount, "parsed D2GS resource stat update"
                 );
@@ -209,7 +239,7 @@ fn log_server_message_details(message: &ServerMessage) {
             merc_id,
             ..
         } => {
-            info!(
+            debug!(
                 skill_id,
                 summon_type, player_id, merc_id, "parsed D2GS merc assignment"
             );
@@ -235,7 +265,7 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
             len,
             expected_sequence,
         } => {
-            info!(
+            debug!(
                 sequence,
                 len, expected_sequence, "ignored duplicate D2GS TCP segment"
             );
@@ -246,7 +276,7 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
             emitted,
             expected_sequence,
         } => {
-            info!(
+            debug!(
                 sequence,
                 skipped, emitted, expected_sequence, "trimmed overlapping D2GS TCP segment"
             );
@@ -268,7 +298,7 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
             );
         }
         ConnectionTransportWarning::BufferedTcpSegmentReleased { sequence, len } => {
-            info!(
+            debug!(
                 sequence,
                 len, "released buffered D2GS TCP segment after gap filled"
             );
@@ -289,16 +319,35 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
                 "reset D2GS reader after missing TCP gap exceeded buffer limit"
             );
         }
+        ConnectionTransportWarning::TcpGapTimeoutReset {
+            sequence,
+            len,
+            expected_sequence,
+            buffered_segments,
+            buffered_bytes,
+            elapsed_millis,
+        } => {
+            warn!(
+                sequence,
+                len,
+                expected_sequence,
+                buffered_segments,
+                buffered_bytes,
+                elapsed_millis,
+                "reset D2GS reader after missing TCP gap timed out"
+            );
+        }
         ConnectionTransportWarning::BufferedD2gsPayload {
             payload_len,
             buffered_len,
             snapshot,
         } => {
-            info!(
+            debug!(
                 payload_len,
                 buffered_len,
                 packet_buffer_len = snapshot.packet_buffer_len,
                 compressed_buffer_len = snapshot.compressed_buffer_len,
+                compression_enabled = snapshot.compression_enabled,
                 payload_prefix = %hex_prefix(&snapshot.payload_prefix, 32),
                 packet_buffer_prefix = %hex_prefix(&snapshot.packet_buffer_prefix, 32),
                 compressed_buffer_prefix = %hex_prefix(&snapshot.compressed_buffer_prefix, 32),
@@ -315,6 +364,7 @@ fn log_transport_warning(warning: &ConnectionTransportWarning) {
                 discarded_len,
                 packet_buffer_len = snapshot.packet_buffer_len,
                 compressed_buffer_len = snapshot.compressed_buffer_len,
+                compression_enabled = snapshot.compression_enabled,
                 payload_prefix = %hex_prefix(&snapshot.payload_prefix, 32),
                 packet_buffer_prefix = %hex_prefix(&snapshot.packet_buffer_prefix, 32),
                 compressed_buffer_prefix = %hex_prefix(&snapshot.compressed_buffer_prefix, 32),
@@ -429,24 +479,27 @@ fn log_capture_interfaces() {
         );
     }
 
-    if let Some(candidate) = interfaces
-        .iter()
-        .find(|interface| libd2_candidate(interface))
-    {
-        info!(
-            name = %candidate.name,
-            index = candidate.index,
-            ips = ?candidate.ips,
-            "first libd2-style capture interface candidate"
-        );
+    if let Some(selection) = libd2::select_capture_interface(&interfaces) {
+        match selection.reason {
+            CaptureInterfaceSelectionReason::RouteProbe { local_ip } => info!(
+                name = %selection.interface.name,
+                description = %selection.interface.description,
+                index = selection.interface.index,
+                ips = ?selection.interface.ips,
+                %local_ip,
+                "route-probed libd2 capture interface candidate"
+            ),
+            CaptureInterfaceSelectionReason::Fallback => info!(
+                name = %selection.interface.name,
+                description = %selection.interface.description,
+                index = selection.interface.index,
+                ips = ?selection.interface.ips,
+                "fallback libd2 capture interface candidate"
+            ),
+        }
     } else {
         warn!("no libd2-style capture interface candidate found");
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn libd2_candidate(interface: &NetworkInterface) -> bool {
-    interface.is_up() && !interface.is_loopback() && !interface.ips.is_empty()
 }
 
 #[cfg(target_os = "linux")]
@@ -470,14 +523,3 @@ fn log_process_capabilities() {
 
 #[cfg(not(target_os = "linux"))]
 fn log_process_capabilities() {}
-
-#[cfg(target_os = "windows")]
-fn libd2_candidate(interface: &NetworkInterface) -> bool {
-    use pnet::ipnetwork::IpNetwork;
-    use std::net::{IpAddr, Ipv4Addr};
-
-    interface
-        .ips
-        .first()
-        .is_some_and(|ip| *ip != IpNetwork::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0).unwrap())
-}

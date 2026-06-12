@@ -901,6 +901,9 @@ fn transport_warning_label(warning: &ConnectionTransportWarning) -> String {
             "buffered TCP segment released".to_owned()
         }
         ConnectionTransportWarning::TcpGapReset { .. } => "TCP gap reset D2GS reader".to_owned(),
+        ConnectionTransportWarning::TcpGapTimeoutReset { .. } => {
+            "TCP gap timed out; D2GS reader reset".to_owned()
+        }
         ConnectionTransportWarning::BufferedD2gsPayload { .. } => {
             "partial D2GS payload buffered".to_owned()
         }
