@@ -1152,6 +1152,24 @@ mod tests {
             unit_type: 0,
             unit_id: 7,
         }));
+        assert!(state.update(libd2::ServerMessage::SetAttributeU32 {
+            attribute: UnitStat::GoldOnCharacter as u8,
+            amount: 777,
+        }));
+        assert!(state.update(libd2::ServerMessage::SetAttributeU32 {
+            attribute: UnitStat::GoldInStash as u8,
+            amount: 8_888,
+        }));
+        let mut quest_bits = [0u8; 41];
+        quest_bits[libd2::QuestLogEntry::DenOfEvil.index()] =
+            libd2::QuestLogEntryState::COMPLETED_BIT;
+        assert!(state.update(libd2::ServerMessage::PlayerQuestLogInfo { quest_bits }));
+        assert!(state.update(libd2::ServerMessage::WaypointMenu {
+            unit_id: 7,
+            unknown: 0,
+            waypoint_bits: [0b0000_0001, 0, 0, 0, 0b0100_0000, 0, 0, 0],
+            unused: [0; 6],
+        }));
 
         let snapshot = OverlaySnapshot::from_game_state(&state, CaptureSnapshot::default());
         let export = snapshot
@@ -1160,6 +1178,19 @@ mod tests {
 
         assert_eq!(export.file_name, "Saver.d2s");
         assert!(!export.bytes.is_empty());
+
+        let file = CharacterFile::parse(export.bytes.to_vec()).expect("export should parse");
+        assert_eq!(file.stat(libd2::CharacterStat::Gold), Some(777));
+        assert_eq!(file.stat(libd2::CharacterStat::StashedGold), Some(8_888));
+        let quests = libd2::parse_legacy_quest_words(file.raw_bytes()).expect("quests exported");
+        assert_eq!(
+            quests[0][libd2::QuestLogEntry::DenOfEvil.index()],
+            libd2::QUEST_CLOSED_COMPLETE
+        );
+        let waypoints =
+            libd2::parse_legacy_waypoints(file.raw_bytes()).expect("waypoints exported");
+        assert!(waypoints[0][0]);
+        assert!(waypoints[0][38]);
     }
 
     #[test]

@@ -111,6 +111,9 @@ Follow-up UI refinements:
   overwriting the previous test export.
 - Added focused tests for export availability in the snapshot layer and for the
   filename suffixing behavior used by the download action.
+- Strengthened the snapshot export regression test so the UI download payload is
+  parsed back as a `.d2s` file and verified to include inventory gold, stash
+  gold, quest completion words, and waypoint bits from libd2 game state.
 - Added Downloads-directory resolution that prefers the platform-reported user
   Downloads path and falls back to `<home>/Downloads` when the OS does not
   expose one directly.
@@ -188,3 +191,5 @@ cargo build --release
 ```
 
 Result: passed. 30 tests.
+Latest focused verification also passed `cargo test` and
+`cargo clippy --all-targets -- -D warnings` with 33 tests.
