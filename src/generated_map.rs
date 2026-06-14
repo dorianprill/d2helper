@@ -104,7 +104,8 @@ impl GeneratedMapCache {
                 }
                 if let Some(map) = std::fs::read_to_string(&path)
                     .ok()
-                    .and_then(|json| request.normalize_mapgen_json(&json).ok()) {
+                    .and_then(|json| request.normalize_mapgen_json(&json).ok())
+                {
                     info!(
                         path = %path.display(),
                         seed = %format_args!("0x{:08x}", key.seed),
@@ -164,7 +165,7 @@ fn generated_map_file_candidates(path: &Path, key: GeneratedMapKey) -> Vec<PathB
 
 #[cfg(test)]
 mod tests {
-    use super::{generated_map_file_candidates, GeneratedMapKey};
+    use super::{GeneratedMapKey, generated_map_file_candidates};
     use std::path::Path;
 
     #[test]
