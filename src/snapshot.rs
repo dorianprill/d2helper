@@ -1182,13 +1182,13 @@ mod tests {
         let file = CharacterFile::parse(export.bytes.to_vec()).expect("export should parse");
         assert_eq!(file.stat(libd2::CharacterStat::Gold), Some(777));
         assert_eq!(file.stat(libd2::CharacterStat::StashedGold), Some(8_888));
-        let quests = libd2::parse_legacy_quest_words(file.raw_bytes()).expect("quests exported");
+        let quests = libd2::parse_legacy_quest_words(file.raw_bytes(), 0).expect("quests exported");
         assert_eq!(
             quests[0][libd2::QuestLogEntry::DenOfEvil.index()],
             libd2::QUEST_CLOSED_COMPLETE
         );
         let waypoints =
-            libd2::parse_legacy_waypoints(file.raw_bytes()).expect("waypoints exported");
+            libd2::parse_legacy_waypoints(file.raw_bytes(), 0).expect("waypoints exported");
         assert!(waypoints[0][0]);
         assert!(waypoints[0][38]);
     }
